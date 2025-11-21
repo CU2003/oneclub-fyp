@@ -1,0 +1,75 @@
+/* global stylesheet for OneClub */
+/* reference: https://www.w3schools.com/css/default.asp */
+
+:root {
+  --page-bg: #eaf4ff;   /* light blue  - thee define main coulour scheme*/
+  --card-bg: #ffffff;
+  --text: #1f2a37;
+}
+/* makes the webpage fill the full height and removes any default browser margins*/
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+
+/* nackgroung and text colour, font and */
+body {
+  background: var(--page-bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+
+  /* Center the main content block */
+  display: grid;
+  place-items: center;
+  text-align: center;       /* center ALL text for the web app */
+}
+
+/*  keep links tidy */
+a { color: #3559ff; text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* headings */
+h1 { font-size: 3rem; line-height: 1.1; margin: 0 0 1rem; }
+h2 { margin: 1.25rem 0 .5rem; }
+
+/* buttons, rounded corners and subtle border, also adds hover shadow */
+button {
+  border-radius: 10px;
+  border: 1px solid rgba(0,0,0,.1);
+  padding: 0.6em 1.2em;
+  font-size: 1rem;
+  font-weight: 600;
+  background: #f5f7ff;
+  cursor: pointer;
+  transition: transform .05s ease, box-shadow .2s ease, border-color .2s ease;
+}
+button:hover { border-color: #94a3ff; box-shadow: 0 4px 14px rgba(0,0,0,.08); }
+button:active { transform: translateY(1px); }
+
+/* input fields  */
+input[type="text"], input[type="search"] {
+  border: 1px solid rgba(0,0,0,.15);
+  border-radius: 10px;
+  padding: .6em .9em;
+  font-size: 1rem;
+  background: #fff;
+}
+
+/* layout helper */
+/* .app sets max width for the main container */
+/* .card: reusable white box with rounded corners & shadow */
+.app {
+  width: min(900px, 92vw);
+  margin: 0 auto;
+}
+
+.card {
+  background: var(--card-bg);
+  border-radius: 18px;
+  box-shadow: 0 10px 28px rgba(0,0,0,.10);
+  padding: 24px;
+}
+
+/* small spacing utilities */
+.mb-4 { margin-bottom: 1rem; }
+.mb-6 { margin-bottom: 1.5rem; }

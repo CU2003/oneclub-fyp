@@ -1,0 +1,279 @@
+/* =========================================================
+   Reference: W3schools - https://www.w3schools.com/
+   Used this to assist with the styling while picking our certain I features I liked from the website
+   looked up basic CSS (selectors, box model, flexbox) on W3Schools to style these classes.
+   The styles here follow simple best practices shown there, so they’re easy to read and tweak. */
+
+
+/* Theme */
+:root{
+  --bg:#eaf4ff;
+  --text:#0e1015;
+  --muted:#64748b;
+  --line:#d7dee9;
+
+  --bar:#0f1115;        /* navbar bg */
+  --bar-line:#20222a;
+
+  --panel:#ffffff;
+  --panel-line:#e6e8ee;
+
+  --chip:#f1f5f9;
+  --chip-active:#e2e8f0;
+
+  --focus:#4ade80;
+
+  /* page side padding; set to 0 for true edge-to-edge */
+  --gutter:16px;
+}
+
+*{ box-sizing:border-box }
+html, body, #root { height: 100% }
+body{
+  margin:0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui,-apple-system,Segoe UI,Roboto,Inter,sans-serif;
+}
+
+/* ===== NAVBAR: full-width bar with centered row ===== */
+.navbar{
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  width: 100vw;                 /* span the viewport */
+  left: 0;
+  right: 0;
+  background: var(--bar);
+  border-bottom: 1px solid var(--bar-line);
+  backdrop-filter: blur(6px);
+}
+
+.navbar-inner{
+  /* make the inner row full-width; no max-width cap */
+  max-width: none;
+  width: 100%;
+  margin: 0;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.brand-wrap{ display:flex; align-items:center; gap:10px }
+.brand{ font-weight:800; letter-spacing:.2px; color:#e8e9ee }
+
+/* Search (in navbar) */
+.search{ position:relative; flex:1; display:flex; align-items:center }
+.search-icon{
+  position:absolute; left:12px; top:50%; transform:translateY(-50%);
+  width:18px; height:18px; opacity:.7; color:#c7c9d1;
+}
+.search-input{
+  width:100%;
+  padding:10px 12px 10px 36px;  /* space for icon */
+  background:#0b0d12;
+  border:1px solid #2a2d36;
+  border-radius:999px;
+  color:#e8e9ee;
+}
+.search-input::placeholder{ color:#9aa0aa }
+.search-input:focus{
+  outline:none; border-color:var(--focus);
+  box-shadow:0 0 0 3px rgba(74,222,128,.14);
+}
+
+/* Right side actions in navbar */
+.nav-actions{ display:flex; align-items:center; gap:8px }
+.icon-btn,.avatar{
+  background:#0b0d12; border:1px solid #2a2d36; color:#e8e9ee;
+  border-radius:10px; padding:8px 10px; cursor:pointer;
+}
+.avatar{ width:32px; height:32px; border-radius:50%; display:grid; place-items:center; font-weight:700 }
+
+/* ===== PAGE: full-width wrapper under the bar ===== */
+.page{
+  max-width:none;               /* remove previous cap */
+  width:100vw;                  /* fill viewport */
+  margin:0;
+  padding: var(--gutter);       /* minimal side padding (set --gutter:0 for none) */
+}
+
+/* ===== 3-column layout (FotMob style) ===== */
+.layout{
+  width:100%;
+  display:grid;
+  gap:16px;
+  grid-template-columns: 300px minmax(0,1fr) 360px;
+}
+@media (min-width:1400px){
+  .layout{ grid-template-columns: 320px minmax(0,1fr) 380px; }
+}
+@media (max-width:1100px){
+  .layout{ grid-template-columns: 240px minmax(0,1fr) }
+  .right{ display:none }
+}
+@media (max-width:780px){
+  .layout{ grid-template-columns: 1fr }
+  .left{ display:none }
+}
+
+/* Cards, panels, lists */
+.card{
+  background:var(--panel);
+  border:1px solid var(--panel-line);
+  border-radius:14px;
+  padding:14px;
+  box-shadow:0 1px 0 rgba(10,12,16,.03);
+}
+.card-title{ margin:0 0 10px 0; font-size:18px; font-weight:800 }
+
+.list{ list-style:disc; margin:0; padding-left:20px; display:grid; gap:6px }
+.select-wrap{ margin-top:10px }
+.select{
+  width:100%; padding:10px 12px; border-radius:10px;
+  background:#f8fafc; border:1px solid var(--panel-line);
+  color:var(--text); cursor:pointer;
+}
+
+/* Center column toolbar + chips */
+.toolbar{ display:flex; align-items:center; gap:10px; margin:8px 0 12px }
+.pill{
+  background:#f8fafc; border:1px solid var(--panel-line);
+  color:var(--text); padding:8px 12px; border-radius:999px; cursor:pointer; font-weight:600;
+}
+.pill-active{ background:#eef2f7 }
+.spacer{ flex:1 }
+.chip-row{ display:flex; gap:8px }
+
+.chip{
+  background:var(--chip); border:1px solid var(--panel-line);
+  color:var(--text); padding:6px 10px; border-radius:999px; cursor:pointer;
+}
+.chip-active{ background:var(--chip-active) }
+
+/* Icon chip (for Settings, etc) */
+.icon-chip{
+  display:inline-grid; place-items:center;
+  width:36px; height:36px; border-radius:999px;
+  background:var(--chip); border:1px solid var(--panel-line);
+  cursor:pointer; font-weight:700; line-height:0;
+}
+.icon-chip:hover{ background:var(--chip-active) }
+
+/* Section panels */
+.panel{
+  background:var(--panel);
+  border:1px solid var(--panel-line);
+  border-radius:14px;
+  overflow:hidden;
+  margin-bottom:12px;
+}
+.panel-head{
+  padding:10px 12px;
+  border-bottom:1px solid var(--panel-line);
+  font-weight:700; letter-spacing:.2px;
+}
+.panel-body{ padding:16px }
+.muted{ color:var(--muted) }
+.small{ font-size:12px }
+
+/* Right column demo */
+.grid-demo{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:8px 0 12px }
+.dot{ height:36px; border-radius:10px; background:#f1f5f9; border:1px solid var(--panel-line) }
+.btn{
+  width:100%; padding:10px 12px; border-radius:10px;
+  background:#f8fafc; border:1px solid var(--panel-line); color:var(--text); cursor:pointer;
+}
+
+/* News cards */
+.news{
+  display:grid; grid-template-columns:64px 1fr; gap:10px; align-items:center;
+  padding:8px; border-radius:10px;
+}
+.news + .news{ margin-top:6px }
+.thumb{ width:64px; height:48px; border-radius:8px; background:#f1f5f9; border:1px solid var(--panel-line) }
+.news-title{ margin:0 0 4px 0; font-size:14px }
+
+/* ===== Dropdowns (left sidebar) ===== */
+.select-dropdown{ display:block }
+.select-dropdown > summary{
+  list-style:none; cursor:pointer; padding:10px 12px;
+  background:#f8fafc; border:1px solid var(--panel-line);
+  border-radius:10px; font-weight:700;
+}
+.select-dropdown[open] > summary{ border-bottom-left-radius:0; border-bottom-right-radius:0 }
+
+.menu{
+  margin:0; padding:8px 0;
+  border:1px solid var(--panel-line); border-top:none;
+  background:#fff; border-bottom-left-radius:10px; border-bottom-right-radius:10px;
+  max-height:260px; overflow:auto;
+}
+.menu li{
+  list-style:none; padding:8px 12px; cursor:pointer;
+}
+.menu li:hover, .menu li:focus{ background:#f1f5f9; outline:none }
+
+/* ===== Accessibility helpers ===== */
+:focus{ outline:3px solid var(--focus); outline-offset:2px }
+
+.skip-link{
+  position:absolute; left:-9999px; top:auto; width:1px; height:1px; overflow:hidden;
+}
+.skip-link:focus{
+  position:static; width:auto; height:auto;
+  padding:.5rem .75rem; background:#fff; border:2px solid #000;
+}
+.sr-only{
+  position:absolute !important; height:1px; width:1px; overflow:hidden;
+  clip:rect(1px,1px,1px,1px); white-space:nowrap; border:0; padding:0; margin:-1px;
+}
+
+/* ===== Settings dropdown ===== */
+.settings-menu {
+  position: relative;
+  margin-left: auto; /* push to right in the navbar */
+}
+
+.settings-menu > summary {
+  list-style: none;
+  cursor: pointer;
+  border: 0;
+  background: transparent;
+  padding: 6px 10px;
+  border-radius: 999px;
+  line-height: 1;
+}
+.settings-menu > summary::-webkit-details-marker { display: none; }
+
+/* optional hover */
+.settings-menu > summary:hover {
+  background: rgba(0,0,0,.06);
+}
+
+/* dropdown menu box */
+.settings-menu .menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  min-width: 200px;
+  margin: 0;
+  padding: 6px 0;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 10px 30px rgba(0,0,0,.12);
+  list-style: none;          /* no bullets */
+}
+
+/* links inside the menu */
+.settings-menu .menu li a {
+  display: block;
+  padding: 10px 14px;
+  text-decoration: none;
+  color: inherit;
+  border-radius: 8px;
+}
+.settings-menu .menu li a:hover {
+  background: rgba(0,0,0,.04);
+}
