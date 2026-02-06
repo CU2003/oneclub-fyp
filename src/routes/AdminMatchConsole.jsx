@@ -1,19 +1,23 @@
 // src/routes/AdminMatchConsole.jsx
-// Google Firebase (2025), "Get data with Cloud Firestore" - https://firebase.google.com/docs/firestore/query-data/listen and
-// "Listen to real-time updates with Cloud Firestore" - https://firebase.google.com/docs/firestore/query-data/listen documentation.
-// Used as a guide for using collection(), query(), getDocs(), onSnapshot() and updateDoc()
-// in the admin match console. - Iteration 2
+// google firebase (2025), "get data with cloud firestore" - https://firebase.google.com/docs/firestore/query-data/listen and
+// "listen to real-time updates with cloud firestore" - https://firebase.google.com/docs/firestore/query-data/listen documentation.
+// used as a guide for using collection(), query(), getDocs(), onSnapshot() and updateDoc()
+// in the admin match console. - iteration 2
 
+// reference: https://firebase.google.com/docs/firestore/query-data/get-data#get_a_document
+// line 77, grabbed staright from link.  it loads the admin's club
+// name from their profile in Firestore so the admin console only shows fixtures for their club
 
 // the main admin control panel for live matches.
 // admins can
 // choose a game to update
 // start/stop/reset the match clock
 // update goals, points, cards for both teams
-// update the match status - FH, SH, FT
-// Changes are saved to Firestore and displayed on the home page.
+// update the match status - fh, sh, ft
+// changes are saved to firestore and displayed on the home page.
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../AuthContext.jsx"; // useauth gives the current logged in user from authcontext
 import { auth, db } from "../firebase"; // auth used for loggin out, db lets us talk to firestore
 import {
@@ -22,20 +26,19 @@ import {
   orderBy,
   getDocs,
   doc,
+  getDoc, // reads the admin user profile from Firestore users (uid)
   onSnapshot,
   updateDoc,
-  serverTimestamp, // Stores time when clock is started
+  serverTimestamp, // stores time when clock is started
+  addDoc, // user story 13 - create fixtures
 } from "firebase/firestore";
 
-// Map admin emails to the club name they are allowed to update - only allowed to update for their club
-const ADMIN_CLUBS = {
-  "kilbrittaingaa@oneclub.com": "Kilbrittain",
-  "ballygunnergaa@oneclub.com": "Ballygunner",
-};
+// admins clubs is loaded from firestore (users/uid)
 
 function AdminMatchConsole() {
   // currentuser is logged in admin
-  const { currentUser } = useAuth();
+  const { currentUser, userDoc } = useAuth();
+  const navigate = useNavigate();
 
   const [fixtures, setFixtures] = useState([]); // list of fixtures admin can see
   const [loadingFixtures, setLoadingFixtures] = useState(true); // loading message flag for users
@@ -47,57 +50,233 @@ function AdminMatchConsole() {
   const [actionError, setActionError] = useState(""); // error for actions like updating score, cards etc.
 
   const [elapsedSeconds, setElapsedSeconds] = useState(0); // number of seconds match clock has been running
-  const [isClockRunning, setIsClockRunning] = useState(false); // truw or false for is clock is still running for game
+  const [isClockRunning, setIsClockRunning] = useState(false); // true or false for is clock is still running for game
 
-  const handleLogout = () => { // when admin clicks logout, signs them out of FB auth
+  // user story 13 - create fixture form (pre-match details)
+  // these are like boxes that store the information the admin types into the form
+  const [newAwayTeam, setNewAwayTeam] = useState("");
+  const [newDateTime, setNewDateTime] = useState("");
+  const [newVenue, setNewVenue] = useState("");
+  const [createError, setCreateError] = useState("");
+  const [createSuccess, setCreateSuccess] = useState("");
+
+  // club name is loaded from the admins firestore profile
+  const [clubName, setClubName] = useState(null);
+  const [loadingClubName, setLoadingClubName] = useState(true);
+
+  const handleLogout = () => {
+    // when admin clicks logout, signs them out of FB auth
     auth.signOut();
   };
 
-  // works out which club this admin is allowed to manage based off their email - if none, returns null
-  const clubName = currentUser
-    ? ADMIN_CLUBS[currentUser.email] ?? null
-    : null;
+  // loads this admin's club from Firestore user doc:
+  // users/uid include role, admin, club and clubname
 
-  // Google Firebase (2025), "Get data with Cloud Firestore" - https://firebase.google.com/docs/firestore/query-data/listen
-  // Lines 64-110 ~
-  // used this to assist with the chaging of championship/fixtures path and filter by the admin's club
-  // Iteration 2
-  // Load fixtures that this admin is allowed to see
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadClubName() {
+      setLoadingClubName(true);
+
+      // if no one logged in, can't load anything.
+      if (!currentUser) {
+        setClubName(null);
+        setLoadingClubName(false);
+        return;
+      }
+
+      try {
+        // prefer the already-subscribed firestore profile from authcontext (userDoc)
+        const data = userDoc;
+
+        if (!data) {
+          if (!cancelled) {
+            setClubName(null);
+            setLoadingClubName(false);
+          }
+          return;
+        }
+
+        // prefer structured club field like "UCC_ID" then fall back to clubName
+        if (typeof data.club === "string" && data.club.trim()) {
+          const raw = data.club.trim();
+          const derived = raw.endsWith("_ID") ? raw.replace(/_ID$/, "") : raw;
+          if (!cancelled) {
+            setClubName(derived);
+            setLoadingClubName(false);
+          }
+          return;
+        }
+
+        if (typeof data.clubName === "string" && data.clubName.trim()) {
+          if (!cancelled) {
+            setClubName(data.clubName.trim());
+            setLoadingClubName(false);
+          }
+          return;
+        }
+
+        // no club info
+        if (!cancelled) {
+          setClubName(null);
+          setLoadingClubName(false);
+        }
+      } catch (err) {
+        console.error("Failed to load admin club from Firestore:", err);
+        if (!cancelled) {
+          setClubName(null);
+          setLoadingClubName(false);
+        }
+      }
+    }
+
+    loadClubName();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser, userDoc]);
+
+  // reference: https://chatgpt.com/share/698627f9-e168-8004-b59c-687532595a16
+  // lines 143-151, 161-234
+  // used code to assist me with building the firestore path using useMemo and creating fixtures
+  // got help with understanding how to build dynamic firestore collection paths as arrays, using useMemo to optimize path calculation,and adapting the create fixture form to work with my data structure
+  
+  // reference: https://chatgpt.com/share/69863241-da6c-8004-b905-14311d38b234
+  // lines 148-156 - got help with building  firestore paths based on admin's competition info from their profile
+  // this ensures each admin only sees and creates fixtures for their own competition
+  // admin's associated competition determines where fixtures are stored.
+  // this figures out where in firestore to save the games based on what competition the admin is in
+  // for example, if the admin is in "sigerson-cup", games go to Championship/sigerson-cup/fixtures
+  // if the admin is in "munster-championship", games go to Championship/munster-championship/fixtures
+  const fixtureCollectionPath = useMemo(() => {
+    const type = userDoc?.competitionType || "championship";
+    const id = userDoc?.competitionId || "munster-championship";
+
+    if (type === "championship") return ["Championship", id, "fixtures"];
+    if (type === "league") return ["Leagues", id, "fixtures"];
+    // fallback
+    return ["Championship", "munster-championship", "fixtures"];
+  }, [userDoc?.competitionType, userDoc?.competitionId]);
+
+  const competitionLabel = useMemo(() => {
+    const type = userDoc?.competitionType || "championship";
+    const id = userDoc?.competitionId || "munster-championship";
+    return `${type}: ${id}`;
+  }, [userDoc?.competitionType, userDoc?.competitionId]);
+
+  // user story 13 - this function runs when the admin clicks "save fixture"
+  // it takes all the information from the form and saves it to firestore as a new game
+  async function handleCreateFixture(e) {
+    e.preventDefault();
+    setCreateError("");
+    setCreateSuccess("");
+
+    // check if the admin has a club set up in their profile
+    // if not, show an error and stop
+    if (!clubName) {
+      setCreateError("Your club is not set on your admin profile.");
+      return;
+    }
+    // check if the admin entered an opponent team name
+    // if not, show an error and stop
+    if (!newAwayTeam.trim()) {
+      setCreateError("Please enter an opponent.");
+      return;
+    }
+    // check if the admin picked a date and time
+    // if not, show an error and stop
+    if (!newDateTime) {
+      setCreateError("Please choose a date and time.");
+      return;
+    }
+
+    // turn the date and time the admin picked into a proper date object
+    const matchDate = new Date(newDateTime);
+    // check if the date is valid
+    // if not, show an error and stop
+    if (Number.isNaN(matchDate.getTime())) {
+      setCreateError("Date/time is not valid.");
+      return;
+    }
+
+    try {
+      // figure out where in firestore to save this game
+      // uses the fixtureCollectionPath we calculated earlier
+      const fixturesCol = collection(db, ...fixtureCollectionPath);
+      
+      // create a new game document in firestore with all the information
+      await addDoc(fixturesCol, {
+        homeTeam: clubName,  // the admin's club is always the home team
+        awayTeam: newAwayTeam.trim(),  // the opponent the admin typed in
+        date: matchDate,  // when the game will be played
+        venue: newVenue.trim() || null,  // where the game will be played (optional)
+
+        // baseline match fields (so it behaves like Kilbrittain fixtures)
+        // start everything at zero since the game hasn't been played yet
+        homeGoals: 0,
+        homePoints: 0,
+        awayGoals: 0,
+        awayPoints: 0,
+        homeYellowCards: 0,
+        homeRedCards: 0,
+        awayYellowCards: 0,
+        awayRedCards: 0,
+
+        status: "upcoming",  // the game hasn't started yet
+        clockRunning: false,  // the match clock isn't running
+        clockSeconds: 0,  // the clock starts at zero
+        clockStartedAt: null,  // the clock hasn't been started yet
+      });
+
+      // if we get here, the game was created successfully
+      // show a success message and clear the form
+      setCreateSuccess("Fixture created.");
+      setNewAwayTeam("");
+      setNewDateTime("");
+      setNewVenue("");
+    } catch (err) {
+      // if something goes wrong, log it and show an error message
+      console.error("Failed to create fixture:", err);
+      setCreateError("Could not create fixture. Check Firestore rules and try again.");
+    }
+  }
+
+  // google firebase (2025), "get data with cloud firestore" - https://firebase.google.com/docs/firestore/query-data/listen
+  // lines 64-110 ~
+  // used this to assist with the changing of championship/fixtures path and filter by the admin's club
+  // iteration 2
+  // load fixtures that this admin is allowed to see
   useEffect(() => {
     async function loadFixtures() {
       setLoadingFixtures(true);
       setFixturesError("");
 
-      // Firestore query to get Munster Championship fixtures ordered by date
+      // wait until we know the admin's clubName before filtering
+      // otherwise the list may briefly show "all fixtures"
+      if (loadingClubName) return;
+
+      // firestore query to get fixtures ordered by date
       try {
         const q = query(
-          collection(
-            db,
-            "Championship",
-            "munster-championship",
-            "fixtures"
-          ),
+          collection(db, ...fixtureCollectionPath),
           orderBy("date", "asc")
         );
 
         // runs query once and gets all matching documents
         const snap = await getDocs(q);
-        // turns each firestore document into a plain JS object with an id
+        // turns each firestore document into a plain js object with an id
         const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-        // If this admin is tied to a club, only show games where that club is home or away, if no clubname show all fixtures
-        const filtered =
-          clubName
-            ? all.filter(
-                (f) =>
-                  f.homeTeam === clubName || f.awayTeam === clubName
-              )
-            : all;
+        // if this admin is tied to a club, only show games where that club is home or away
+        // if clubName is null, show all fixtures (you can change to block access if you prefer).
+        const filtered = clubName
+          ? all.filter((f) => f.homeTeam === clubName || f.awayTeam === clubName)
+          : all;
 
         setFixtures(filtered);
       } catch (err) {
         // if anything goes wrong, log error and show frienldy message
-        // Crucial for testing - itertaion 3
+        // crucial for testing
         console.error(err);
         setFixturesError("Could not load fixtures for admin console.");
       } finally {
@@ -105,11 +284,10 @@ function AdminMatchConsole() {
       }
     }
 
-    // calls inner function
     loadFixtures();
-  }, [clubName]); // reruns if clubname changes for different admin
+  }, [clubName, loadingClubName]); // depends on loaded clubName
 
-  // Subscribe to currently selected fixture
+  // subscribe to currently selected fixture
   useEffect(() => {
     // if no fixture selected, clears everythign and clock stops
     if (!selectedFixtureId) {
@@ -122,9 +300,7 @@ function AdminMatchConsole() {
     // reference to fiture doc in firestore
     const fixtureRef = doc(
       db,
-      "Championship",
-      "munster-championship",
-      "fixtures",
+      ...fixtureCollectionPath,
       selectedFixtureId
     );
 
@@ -133,7 +309,7 @@ function AdminMatchConsole() {
       if (snap.exists()) {
         const data = snap.data();
 
-        // Used ChatGPT to help generate code that would allow the clock to show for both the adminmatchconsole
+        // used chatgpt to help generate code that would allow the clock to show for both the adminmatchconsole
         // and the home page for supporters. https://chatgpt.com/share/69209f75-a680-8004-ba40-c34a911b6e4f
         // lines 140 - 179 ~
         // base seconds stored in Firestore
@@ -226,21 +402,21 @@ function AdminMatchConsole() {
     return { homeYellow, homeRed, awayYellow, awayRed };
   }
 
-  // updates the score in firestore
-  // team for home and away team
-  // scoretype for goal or point
-  // delta for +1 or -1
+  // user story 3 and 5 - updates the score in firestore
+  // team can be "home" or "away"
+  // scoreType can be "goal" or "point"
+  // delta is +1 to add a score, or -1 to remove one (for corrections)
   async function changeScore(team, scoreType, delta) {
-    if (!selectedFixtureId || !selectedFixture) return; // no fixture slected - do nothing
+    if (!selectedFixtureId || !selectedFixture) return; // no fixture selected - do nothing
     setActionError("");
 
-    // gets current score from helper
+    // gets current score from helper function
     let { homeGoals, homePoints, awayGoals, awayPoints } = getScores();
 
     // decides which value to change based on team and score type
     if (team === "home") {
       if (scoreType === "goal") {
-        // never below 0
+        // never let the score go below 0
         homeGoals = Math.max(0, homeGoals + delta);
       } else {
         homePoints = Math.max(0, homePoints + delta);
@@ -257,12 +433,10 @@ function AdminMatchConsole() {
       // reference to this fixture in firestore
       const fixtureRef = doc(
         db,
-        "Championship",
-        "munster-championship",
-        "fixtures",
+        ...fixtureCollectionPath,
         selectedFixtureId
       );
-      // save updated scores to firestore
+      // save updated scores to firestore so supporters see them instantly
       await updateDoc(fixtureRef, {
         homeGoals,
         homePoints,
@@ -275,15 +449,18 @@ function AdminMatchConsole() {
     }
   }
 
-  // updates cards in firestore
+  // user story 3 and 5 - updates cards in firestore
+  // team can be "home" or "away"
+  // cardType can be "yellow" or "red"
+  // delta is +1 to add a card, or -1 to remove one (for corrections)
   async function changeCards(team, cardType, delta) {
     if (!selectedFixtureId || !selectedFixture) return;
     setActionError("");
 
-    // gets current cards count from helper
+    // gets current cards count from helper function
     let { homeYellow, homeRed, awayYellow, awayRed } = getCards();
 
-    // decide which counter to change
+    // decide which counter to change based on team and card type
     if (team === "home") {
       if (cardType === "yellow") {
         homeYellow = Math.max(0, homeYellow + delta);
@@ -301,12 +478,10 @@ function AdminMatchConsole() {
     try {
       const fixtureRef = doc(
         db,
-        "Championship",
-        "munster-championship",
-        "fixtures",
+        ...fixtureCollectionPath,
         selectedFixtureId
       );
-      // saves updated cards counts to firestore
+      // saves updated cards counts to firestore so supporters see them instantly
       await updateDoc(fixtureRef, {
         homeYellowCards: homeYellow,
         homeRedCards: homeRed,
@@ -319,7 +494,8 @@ function AdminMatchConsole() {
     }
   }
 
-  // update the match status - FH, FT etc.
+  // user story 4 - update the match status (first half, half time, second half, full time)
+  // this is called when the admin clicks one of the status buttons
   async function changeStatus(status) {
     if (!selectedFixtureId) return;
     setActionError("");
@@ -327,12 +503,10 @@ function AdminMatchConsole() {
     try {
       const fixtureRef = doc(
         db,
-        "Championship",
-        "munster-championship",
-        "fixtures",
+        ...fixtureCollectionPath,
         selectedFixtureId
       );
-      // save the new status e.g. half time
+      // save the new status to firestore so supporters see it instantly
       await updateDoc(fixtureRef, { status });
     } catch (err) {
       console.error(err);
@@ -340,10 +514,65 @@ function AdminMatchConsole() {
     }
   }
 
-  // Used ChatGPT to assist with the stop/start/reset behvaiour for the match clock
+  // reference: https://firebase.google.com/docs/firestore/manage-data/add-data#update-documents
+  // lines 534 - 559 - updateDoc - when the admin clicks publish or unpublish, it finds the fixture document in firestore and updates just the published field to true or false
+  // this lets admins toggle whether a match is published or not by setting published to true or false
+  
+  // user story #11 - publish/unpublish match
+  // this publishes the match so detailed stats are hidden on home page
+  // when a match is published, it means the detailed stats (cards, clock) are hidden on the home page
+  // only the final score and teams are shown, and users can click "view match report" to see everything
+  async function publishMatch() {
+    // if no game is selected, don't do anything
+    if (!selectedFixtureId) return;
+    setActionError("");
+
+    try {
+      // find the game in firestore
+      const fixtureRef = doc(
+        db,
+        ...fixtureCollectionPath,
+        selectedFixtureId
+      );
+      // set published to true, which tells the home page to hide detailed stats
+      await updateDoc(fixtureRef, { published: true });
+    } catch (err) {
+      // if something goes wrong, log it and show an error
+      console.error(err);
+      setActionError("Could not publish match.");
+    }
+  }
+
+  // user story #11 - unpublishes the match so detailed stats are shown again on home page
+  // when a match is unpublished, all the detailed stats (cards, clock) are shown on the home page again
+  // this is useful if the admin made a mistake and wants to fix something
+  
+  async function unpublishMatch() {
+    // if no game is selected, don't do anything
+    if (!selectedFixtureId) return;
+    setActionError("");
+
+    try {
+      // find the game in firestore
+      const fixtureRef = doc(
+        db,
+        ...fixtureCollectionPath,
+        selectedFixtureId
+      );
+      // set published to false, which tells the home page to show all detailed stats again
+      await updateDoc(fixtureRef, { published: false });
+    } catch (err) {
+      // if something goes wrong, log it and show an error
+      console.error(err);
+      setActionError("Could not unpublish match.");
+    }
+  }
+
+  // used chatgpt to assist with the stop/start/reset behaviour for the match clock
   // https://chatgpt.com/share/69209f75-a680-8004-ba40-c34a911b6e4f lines: 343 - 423 ~
-  // I adapted the pattern to align with the fixture schema
-  // formats clock as minutes:seconds for display
+  // i adapted the pattern to align with the fixture schema
+  // user story 10 - formats clock as minutes:seconds for display (e.g. 15:30)
+  // converts total seconds into a readable time format
   function formatClock(secs) {
     const m = Math.floor(secs / 60);
     const s = secs % 60;
@@ -352,29 +581,30 @@ function AdminMatchConsole() {
     return `${mm}:${ss}`;
   }
 
-  // start the clock for fixture
+  // user story 10 - start the clock for the selected fixture
+  // when the admin clicks "start clock", it saves the current server time to the database
+  // this lets supporters see the clock counting up in real-time
   async function startClock() {
     if (!selectedFixtureId) return;
-    // marks clock run in local state
+    // marks clock as running in local state
     setIsClockRunning(true);
 
     const fixtureRef = doc(
       db,
-      "Championship",
-      "munster-championship",
-      "fixtures",
+      ...fixtureCollectionPath,
       selectedFixtureId
     );
 
-    // in firestore:
-    // clockrunning goes to true and stores exact server time the clock started - clockStartedAt
+    // in firestore, set clockRunning to true and store the exact server time when it started
+    // this lets us calculate how much time has passed even if the page hasn't refreshed
     await updateDoc(fixtureRef, {
       clockRunning: true,
       clockStartedAt: serverTimestamp(),
     }).catch(console.error);
   }
 
-  // stops clock for fixture
+  // user story 10 - stop the clock for the fixture
+  // when the admin clicks "stop", it pauses the clock and saves how much time has elapsed
   async function stopClock() {
     if (!selectedFixtureId) return;
     // stops local ticking
@@ -382,13 +612,12 @@ function AdminMatchConsole() {
 
     const fixtureRef = doc(
       db,
-      "Championship",
-      "munster-championship",
-      "fixtures",
+      ...fixtureCollectionPath,
       selectedFixtureId
     );
 
-    // save the total elapsed time and clear the start time
+    // save the total elapsed time to the database and clear the start time
+    // this way if the admin starts it again later, it continues from where it stopped
     await updateDoc(fixtureRef, {
       clockRunning: false,
       clockSeconds: elapsedSeconds,
@@ -396,7 +625,8 @@ function AdminMatchConsole() {
     }).catch(console.error);
   }
 
-  // resets clock back to 0 for this fixture
+  // user story 10 - reset the clock back to 00:00 for this fixture
+  // when the admin clicks "reset", it clears the clock and starts it fresh
   async function resetClock() {
     if (!selectedFixtureId) return;
     setIsClockRunning(false);
@@ -404,12 +634,10 @@ function AdminMatchConsole() {
 
     const fixtureRef = doc(
       db,
-      "Championship",
-      "munster-championship",
-      "fixtures",
+      ...fixtureCollectionPath,
       selectedFixtureId
     );
-    // resets firestore clock fields
+    // reset all clock fields in firestore back to zero
     await updateDoc(fixtureRef, {
       clockRunning: false,
       clockSeconds: 0,
@@ -417,8 +645,8 @@ function AdminMatchConsole() {
     }).catch(console.error);
   }
 
-  // Back to list button handler
-  // clears the selected game and retunrs to list of fixtures
+  // back to list button handler
+  // clears the selected game and returns to list of fixtures
   function closeCurrentGame() {
     setSelectedFixtureId("");
     setSelectedFixture(null);
@@ -451,6 +679,7 @@ function AdminMatchConsole() {
   const awayName = selectedFixture?.awayTeam || "Away";
   const clockIsOver30 = elapsedSeconds > 30 * 60;
 
+  // ui
   return (
     <div style={{ maxWidth: 900, margin: "2rem auto" }}>
       <header
@@ -463,24 +692,129 @@ function AdminMatchConsole() {
       >
         <h2>Admin Match Console</h2>
         <div>
-          {/* Show which email is logged in */}
+          {/* show which email is logged in */}
           <span style={{ marginRight: "1rem" }}>
             Logged in as: {currentUser?.email}
           </span>
-          {/* Logout button */}
+          {/* logout button */}
           <button onClick={handleLogout}>Logout</button>
         </div>
       </header>
+      
 
-      {/* Choose game to update */}
+      {/* reference: https://www.w3schools.com/html/html_forms.asp */}
+      {/* lines 701-796 - used w3schools html forms documentation to help me build the form structure */}
+      {/* and how to handle form submission in react */}
+      {/* user story 13 - create a fixture for this admin's club */}
       <section style={{ marginBottom: "2rem" }}>
-        <h3>1. Choose a Munster game to update</h3>
+        <h3>0. Create a new fixture</h3>
 
-        {/* Show loading, error, or list of fixtures */}
+        <form
+          onSubmit={handleCreateFixture}
+          style={{
+            borderRadius: "8px",
+            background: "#ffffff",
+            padding: "1rem",
+            boxShadow: "0 2px 6px rgba(0,0,0,0.05)",
+            display: "grid",
+            gap: "0.75rem",
+          }}
+        >
+          <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+            <label style={{ fontSize: 14, flex: 1, minWidth: 180 }}>
+              Home team (your club)
+              <input
+                type="text"
+                value={clubName || ""}
+                readOnly
+                style={{
+                  display: "block",
+                  marginTop: 4,
+                  width: "100%",
+                  padding: "6px 8px",
+                  borderRadius: 6,
+                  border: "1px solid #ddd",
+                  background: "#f9fafb",
+                }}
+              />
+            </label>
+
+            <label style={{ fontSize: 14, flex: 1, minWidth: 180 }}>
+              Away team (opponent)
+              <input
+                type="text"
+                value={newAwayTeam}
+                onChange={(e) => setNewAwayTeam(e.target.value)}
+                style={{
+                  display: "block",
+                  marginTop: 4,
+                  width: "100%",
+                  padding: "6px 8px",
+                  borderRadius: 6,
+                  border: "1px solid #ddd",
+                }}
+              />
+            </label>
+          </div>
+
+          <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+            <label style={{ fontSize: 14 }}>
+              Date &amp; time
+              <input
+                type="datetime-local"
+                value={newDateTime}
+                onChange={(e) => setNewDateTime(e.target.value)}
+                style={{
+                  display: "block",
+                  marginTop: 4,
+                  padding: "6px 8px",
+                  borderRadius: 6,
+                  border: "1px solid #ddd",
+                }}
+              />
+            </label>
+
+            <label style={{ fontSize: 14, flex: 1, minWidth: 180 }}>
+              Venue (optional)
+              <input
+                type="text"
+                value={newVenue}
+                onChange={(e) => setNewVenue(e.target.value)}
+                style={{
+                  display: "block",
+                  marginTop: 4,
+                  width: "100%",
+                  padding: "6px 8px",
+                  borderRadius: 6,
+                  border: "1px solid #ddd",
+                }}
+              />
+            </label>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+            <button type="submit" disabled={!clubName}>
+              Save fixture
+            </button>
+            {createSuccess && (
+              <span style={{ fontSize: 13, color: "green" }}>{createSuccess}</span>
+            )}
+            {createError && (
+              <span style={{ fontSize: 13, color: "red" }}>{createError}</span>
+            )}
+          </div>
+        </form>
+      </section>
+
+      {/* choose game to update */}
+      <section style={{ marginBottom: "2rem" }}>
+        <h3>1. Choose a game to update</h3>
+
+        {/* show loading, error, or list of fixtures */}
         {loadingFixtures && <p>Loading fixtures…</p>}
         {fixturesError && <p style={{ color: "red" }}>{fixturesError}</p>}
 
-        {/* No fixtures found for this admin */}
+        {/* no fixtures found for this admin */}
         {!loadingFixtures && fixtures.length === 0 && !fixturesError && (
           <p>
             No fixtures found for{" "}
@@ -488,7 +822,7 @@ function AdminMatchConsole() {
           </p>
         )}
 
-        {/* Show fixtures list when we have some */}
+        {/* show fixtures list when we have some */}
         {!loadingFixtures && fixtures.length > 0 && (
           <div
             style={{
@@ -509,9 +843,9 @@ function AdminMatchConsole() {
                   borderBottom: "1px solid #eee",
                 }}
               >
-                {/* Text summary of the game */}
+                {/* text summary of the game */}
                 <span>{formatFixtureRow(fix)}</span>
-                {/* Button to open this match in the console */}
+                {/* button to open this match in the console */}
                 <button
                   onClick={() => setSelectedFixtureId(fix.id)}
                   style={{ marginLeft: "1rem" }}
@@ -524,14 +858,14 @@ function AdminMatchConsole() {
         )}
       </section>
 
-      {/* Updates the selected match */}
+      {/* updates the selected match */}
       <section>
         <h3>2. Update match</h3>
 
-        {/* If no match is selected yet, show help text */}
-        {!selectedFixture && <p>Click “Open match” on a game above.</p>}
+        {/* if no match is selected yet, show help text */}
+        {!selectedFixture && <p>Click "Open match" on a game above.</p>}
 
-        {/* Once a match is selected, show all controls */}
+        {/* once a match is selected, show all controls */}
         {selectedFixture && (
           <div
             style={{
@@ -541,7 +875,7 @@ function AdminMatchConsole() {
               boxShadow: "0 2px 6px rgba(0,0,0,0.05)",
             }}
           >
-            {/* Top bar: which match is currently open + back button */}
+            {/* top bar: which match is currently open + back button */}
             <div
               style={{
                 display: "flex",
@@ -559,7 +893,7 @@ function AdminMatchConsole() {
               <button onClick={closeCurrentGame}>Back to game list</button>
             </div>
 
-            {/* Summary of current score */}
+            {/* summary of current score */}
             <p>
               Score:{" "}
               <strong>
@@ -567,13 +901,12 @@ function AdminMatchConsole() {
               </strong>
             </p>
 
-            {/* Summary of current match status */}
+            {/* summary of current match status */}
             <p>
-              Status:{" "}
-              <strong>{selectedFixture.status || "not started"}</strong>
+              Status: <strong>{selectedFixture.status || "not started"}</strong>
             </p>
 
-            {/* Summary of yellow and red cards for each team */}
+            {/* summary of yellow and red cards for each team */}
             <p style={{ marginTop: 4 }}>
               Cards:{" "}
               <strong>
@@ -585,9 +918,10 @@ function AdminMatchConsole() {
               </strong>
             </p>
 
-            {/* Match clock controls */}
+            {/* user story 10 - match clock controls */}
+            {/* admins can start, stop, and reset the match clock during a game */}
             <div style={{ marginTop: "1rem" }}>
-              <h4>Match clock</h4>
+<h4>Match clock</h4>
               <div
                 style={{
                   display: "flex",
@@ -596,7 +930,7 @@ function AdminMatchConsole() {
                   marginBottom: "0.5rem",
                 }}
               >
-                {/* Clock display, turns red after 30:00 */}
+                {/* clock display, turns red after 30 minutes to show extra time */}
                 <span
                   style={{
                     fontSize: "1.8rem",
@@ -608,20 +942,17 @@ function AdminMatchConsole() {
                   {formatClock(elapsedSeconds)}
                 </span>
 
-                {/* Buttons to control the clock */}
+                {/* buttons to control the clock - start makes it count up, stop pauses it, reset goes back to 00:00 */}
                 <div style={{ display: "flex", gap: "0.5rem" }}>
                   <button onClick={startClock}>Start clock</button>
                   <button onClick={stopClock}>Stop</button>
                   <button onClick={resetClock}>Reset</button>
                 </div>
               </div>
-              <p style={{ fontSize: 12, opacity: 0.8 }}>
-                Clock value is shared with the home page and turns red once it
-                goes past 30:00.
-              </p>
             </div>
 
-            {/* Score buttons for adding points and goals */}
+            {/* user story 3 - score buttons for adding points and goals */}
+            {/* when the admin clicks these buttons, it adds 1 to the score and saves it to the database */}
             <div style={{ marginTop: "1rem" }}>
               <h4>Score buttons</h4>
               <div
@@ -647,7 +978,8 @@ function AdminMatchConsole() {
               </div>
             </div>
 
-            {/* Correction buttons for admin incase wrong score updated */}
+            {/* user story 5 - correction buttons for admin in case wrong score updated */}
+            {/* if the admin added a score by mistake, they can click these buttons to remove it */}
             <div style={{ marginTop: "1rem" }}>
               <h4>Score Correction</h4>
               <div
@@ -673,7 +1005,8 @@ function AdminMatchConsole() {
               </div>
             </div>
 
-            {/* Card buttons for yellow and reds*/}
+            {/* user story 3 - card buttons for yellow and red cards */}
+            {/* when the admin clicks these buttons, it adds 1 to the card count and saves it to the database */}
             <div style={{ marginTop: "1rem" }}>
               <h4>Card buttons</h4>
               <div
@@ -699,7 +1032,8 @@ function AdminMatchConsole() {
               </div>
             </div>
 
-            {/* Card correction buttons to remove cards if added by mistake */}
+            {/* user story 5 - card correction buttons to remove cards if added by mistake */}
+            {/* if the admin added a card by mistake, they can click these buttons to remove it */}
             <div style={{ marginTop: "1rem" }}>
               <h4>Card correction</h4>
               <div
@@ -725,7 +1059,8 @@ function AdminMatchConsole() {
               </div>
             </div>
 
-            {/* Match status buttons - HT, FT etc. */}
+            {/* user story 4 - match status buttons */}
+            {/* the admin clicks these to update what stage the game is at (first half, half time, etc.) */}
             <div style={{ marginTop: "1rem" }}>
               <h4>Match status</h4>
               <div
@@ -750,7 +1085,74 @@ function AdminMatchConsole() {
               </div>
             </div>
 
-            {/* Show any error from updating scores/cards/status */}
+            {/* user story #11 - publish/unpublish and view report for completed games */}
+            {/* only show these buttons if the game status is "full time" (game is finished) */}
+            {selectedFixture?.status === "full time" && (
+              <div style={{ marginTop: "1rem" }}>
+                <h4>Publish Match</h4>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.75rem" }}>
+                  {/* if the game is already published, show the unpublish button (red) */}
+                  {/* if the game is not published, show the publish button (green) */}
+                  {selectedFixture?.published ? (
+                    <button
+                      onClick={unpublishMatch}
+                      style={{
+                        padding: "0.75rem 1.5rem",
+                        fontSize: "1rem",
+                        fontWeight: 600,
+                        background: "#ef4444",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "6px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Unpublish Match
+                    </button>
+                  ) : (
+                    <button
+                      onClick={publishMatch}
+                      style={{
+                        padding: "0.75rem 1.5rem",
+                        fontSize: "1rem",
+                        fontWeight: 600,
+                        background: "#10b981",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "6px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Publish Match
+                    </button>
+                  )}
+
+                  {/* user story #11 - this button takes the admin to the match report page */}
+                  {/* it uses the competition info from the admin's profile to build the correct url */}
+                  <button
+                    onClick={() => {
+                      const competitionType = userDoc?.competitionType || "championship";
+                      const competitionId = userDoc?.competitionId || "munster-championship";
+                      navigate(`/report/${competitionType}/${competitionId}/${selectedFixtureId}`);
+                    }}
+                    style={{
+                      padding: "0.75rem 1.5rem",
+                      fontSize: "1rem",
+                      fontWeight: 600,
+                      background: "#3b82f6",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "6px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    View Match Report
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* show any error from updating scores/cards/status */}
             {actionError && (
               <p style={{ color: "red", marginTop: "0.5rem" }}>
                 {actionError}

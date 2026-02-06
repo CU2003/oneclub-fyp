@@ -1,5 +1,3 @@
-// src/routes/AdminLogin.jsx
-
 // this page lets an admin log into the system using email and password
 
 import React, { useState, useEffect } from "react";
@@ -35,7 +33,7 @@ function AdminLogin() {
       // tries signing in using Firebase
       await signInWithEmailAndPassword(auth, email, password);
 
-      // Clears the fields once they’ve signed in - no email or passwords left around
+      // clears the fields once they’ve signed in - no email or passwords left around
       setEmail("");
       setPassword("");
 

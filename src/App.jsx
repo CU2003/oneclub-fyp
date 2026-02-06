@@ -1,128 +1,230 @@
-// Routing structure (Routes, Route, Link, useNavigate) was based on examples from
-// the official React Router documentation and adapted to fit the OneClub pages.
-// React Router (2025), "Basic Example" and "Introduction".
+// user story 1
+// this is the main app file that sets up all the pages and navigation
+// it handles routing between different pages, shows the navigation bar at the top,
+// and manages which pages users can see based on whether they're logged in
+// the search bar lets users find clubs, and the settings menu shows different options
+// depending on whether someone is logged in or not
+
+// reference: https://firebase.google.com/docs/auth/web/password-auth#next_steps
+// signOut function to log users out
+// line 64 - calls auth.signOut() to sign the user out and then sends them back to the home page.
+
+// reference: routing structure based on React Router documentation
 // https://reactrouter.com/6.28.0/start/tutorial Lines 1 - 51 ~
 
-// brings in main css styling
 import "./App.css";
 
-// from react router
-// route/routes decide which page to show for each url
-// link - moves between pages w no reload
-// useNavigate changes page from code
 import { Routes, Route, Link, useNavigate } from "react-router-dom";
 import { useState } from "react";
+import { collection, getDocs, query, where, limit } from "firebase/firestore";
+import { db } from "./firebase";
 
-// different page components in the app
+// importing all the different pages in the app
 import Home from "./routes/Home.jsx";
 import LeaguePage from "./routes/LeaguePage.jsx";
 import ClubPage from "./routes/ClubPage.jsx";
 import About from "./routes/About.jsx";
 import Help from "./routes/Help.jsx";
+import Login from "./routes/Login.jsx";
+import ClubListPage from "./routes/ClubListPage.jsx";
 
-// admin related pages
+
 import AdminLogin from "./routes/AdminLogin.jsx";
 import AdminMatchConsole from "./routes/AdminMatchConsole.jsx";
 
+// user story #11 - this is the page that shows the full match report with all the details
+import MatchReporter from "./routes/MatchReporter.jsx";
+import ProtectedRoute from "./ProtectedRoute.jsx";
+import { AuthProvider, useAuth } from "./AuthContext.jsx";
+import { auth } from "./firebase";
 
-import ProtectedRoute from "./ProtectedRoute.jsx"; // stops unauthorised users from admin console
-import { AuthProvider } from "./AuthContext.jsx"; // access to whole web app for logged in users
 
-
+// converting text into a safe format for URLs
+// turns "Kilbrittain GAA" into "kilbrittain-gaa" so it works in web addresses
+// this is used by the search box to create a web address when someone searches for a club
 function slugify(str) {
   return (str || "")
-    .toLowerCase() // small letters
-    .trim() // removes spaces start and end
-    .replace(/&/g, "and") // changes & to and
-    .replace(/[^a-z0-9]+/g, "-") // replaces anything not a letter/number to -
-    .replace(/^-+|-+$/g, ""); // remove - from start and end
+    .toLowerCase()
+    .trim()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
-// main react component - controls nav bar, search bar and what page to show for url
-export default function App() {
-  const [q, setQ] = useState(""); // current tect in search bar - function changes value of q when user types
-  const navigate = useNavigate(); // function to move to another page
+// main content component that needs access to user authentication
+// split from App because useAuth hook must be inside AuthProvider
+function AppContent() {
+  // user story 2 - storing what the user types in the search box
+  const [q, setQ] = useState("");
+  const navigate = useNavigate();
+  const { currentUser, userDoc } = useAuth(); // getting logged-in user and their profile
 
-  function onSearchSubmit(e) { // runs when user submits search form
-    e.preventDefault(); // stops browser from doing normal form submit
-    const slug = slugify(q); // turns what typed into a slug
-    if (!slug) return; // if empty, do nothing
-    navigate(`/club/${slug}`); // goes to club page for that slug
+  // user story 2 - when the user presses enter or clicks search, find the club and take them to the club page
+  // first tries to find a club by name in firestore, then navigates to the correct club ID
+  async function onSearchSubmit(e) {
+    e.preventDefault();
+    const searchTerm = q.trim();
+    if (!searchTerm) return;
+
+    try {
+      // first try to find a club by name in firestore
+      // this handles cases where the document ID doesn't match the search term (like UCC_ID vs "UCC")
+      const clubsRef = collection(db, "clubs");
+      const searchLower = searchTerm.toLowerCase();
+      
+      // get all clubs and filter by name (firestore doesn't support case-insensitive search easily)
+      const allClubs = await getDocs(clubsRef);
+      const matchingClub = allClubs.docs.find((doc) => {
+        const clubData = doc.data();
+        const clubName = (clubData.name || "").toLowerCase();
+        return clubName.includes(searchLower) || clubName === searchLower;
+      });
+
+      if (matchingClub) {
+        // found a club by name, navigate to its actual document ID
+        navigate(`/club/${matchingClub.id}`);
+      } else {
+        // no club found by name, try the slugified version as fallback
+        const slug = slugify(searchTerm);
+        navigate(`/club/${slug}`);
+      }
+    } catch (err) {
+      console.error("Error searching for club:", err);
+      // fallback to slugified version if search fails
+      const slug = slugify(searchTerm);
+      navigate(`/club/${slug}`);
+    }
   }
 
-  // what the web app displays on screen
+  // signing the user out and taking them back to home page
+  function handleLogout() {
+    auth.signOut();
+    navigate("/");
+  }
+
   return (
-    <AuthProvider>  {/* wraps web app in authprovider so pages know whos logged in */}
-      <>
-        <header className="navbar" role="banner" aria-label="OneClub">
-          <div className="navbar-inner">
-            <Link to="/" className="brand" style={{ textDecoration: "none" }}>  {/* Logo, when clicked back to homepage */}
-              OneClub
-            </Link>
+    <>
+      <header className="navbar" role="banner" aria-label="OneClub">
+        <div className="navbar-inner">
+          <Link to="/" className="brand" style={{ textDecoration: "none" }}>
+            OneClub
+          </Link>
 
-            {/* Search bar */}
-            <form className="search" onSubmit={onSearchSubmit}>
-              <svg
-                className="search-icon" // search icon
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
-                <path
-                  fill="currentColor"
-                  d="M15.5 14h-.79l-.28-.27a6.471 6.471 0 001.48-4.23C15.91 6.01 13.4 3.5 10.45 3.5S5 6.01 5 9.5 7.51 15.5 10.45 15.5c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l4.25 4.25c.41.41 1.08.41 1.49 0s.41-1.08 0-1.49L15.5 14zm-5.05 0C8.01 14 6 11.99 6 9.5S8.01 5 10.45 5s4.45 2.01 4.45 4.5S12.89 14 10.45 14z"
-                />
-              </svg>
-               {/* Text box for user searching club - done in further iterations, only can search st finbarrs atm */}
-              <input
-                className="search-input"
-                placeholder="Search clubs, competitions…"
-                aria-label="Search"
-                value={q} // shows current search text
-                onChange={(e) => setQ(e.target.value)} // update text - q -  when they type
+          {/* user story 2 - search box for finding clubs */}
+          {/* when someone types a club name and presses enter, it takes them to that club's page */}
+          <form className="search" onSubmit={onSearchSubmit}>
+            {/* search icon that appears on the left side of the input box */}
+            <svg
+              className="search-icon"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path
+                fill="currentColor"
+                d="M15.5 14h-.79l-.28-.27a6.471 6.471 0 001.48-4.23C15.91 6.01 13.4 3.5 10.45 3.5S5 6.01 5 9.5 7.51 15.5 10.45 15.5c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l4.25 4.25c.41.41 1.08.41 1.49 0s.41-1.08 0-1.49L15.5 14zm-5.05 0C8.01 14 6 11.99 6 9.5S8.01 5 10.45 5s4.45 2.01 4.45 4.5S12.89 14 10.45 14z"
               />
-            </form>
+            </svg>
 
-            {/* Settings menu */}
-            <nav className="nav-actions">
-              <details className="settings-menu"> {/* dropdown menu when clicked */}
-                <summary
-                  className="icon-btn" // button that opens menu
-                  aria-label="Settings"
-                  role="button"
-                >
-                  ⚙️
-                </summary>
-                <ul className="menu"> {/* The dropdown list of menu links */}
-                  <li>
-                    <Link to="/about">About OneClub</Link>
-                  </li>
-                  <li>
-                    <Link to="/help">Help & Feedback</Link>
-                  </li>
-                  <li>
-                    <Link to="/admin-login">Admin login</Link>
-                  </li>
-                </ul>
-              </details>
-            </nav>
-          </div>
-        </header>
+            {/* the text box where users type what they're looking for */}
+            <input
+              className="search-input"
+              placeholder="Search clubs, competitions…"
+              aria-label="Search"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+          </form>
 
-        {/* choose which page to show based on url */}
+          {/* settings menu and logout button */}
+          <nav className="nav-actions">
+            {/* showing logout button when someone is logged in */}
+            {currentUser && (
+              <button
+                onClick={handleLogout}
+                className="icon-btn"
+                style={{
+                  marginRight: "8px",
+                  padding: "8px 12px",
+                  fontSize: "14px",
+                  fontWeight: 600,
+                }}
+                title="Logout"
+              >
+                Logout
+              </button>
+            )}
+            <details className="settings-menu">
+              <summary className="icon-btn" aria-label="Settings" role="button">
+                Settings
+              </summary>
+              <ul className="menu">
+                <li>
+                  <Link to="/about">About OneClub</Link>
+                </li>
+                <li>
+                  <Link to="/help">Help & Feedback</Link>
+                </li>
+
+                <li>
+                  <Link to="/clubs">Club listing</Link>
+                </li>
+
+                {/* showing different menu items based on login status */}
+                {!currentUser ? (
+                  <>
+                    <li>
+                      <Link to="/login">Login / Sign up</Link>
+                    </li>
+                  </>
+                ) : (
+                  <>
+                    {/* displaying who's logged in and their role */}
+                    <li style={{ padding: "8px 12px", borderTop: "1px solid var(--panel-line)", marginTop: "4px" }}>
+                      <span style={{ fontSize: "12px", opacity: 0.7 }}>
+                        Logged in as: {currentUser.email}
+                        {userDoc?.role && (
+                          <span style={{ textTransform: "capitalize", marginLeft: "4px" }}>
+                            ({userDoc.role})
+                          </span>
+                        )}
+                      </span>
+                    </li>
+                  </>
+                )}
+              </ul>
+            </details>
+          </nav>
+        </div>
+      </header>
+
         <main className="page">
+          {/* user story 1 - defining all the different pages and their web addresses */}
+          {/* when someone visits a web address like /club/kilbrittain, it shows the right page */}
           <Routes>
-            <Route path="/" element={<Home />} />  {/* show live games - to be changed for iteration 3 - ongoing along with scheduled*/}
-            <Route path="/league/:leagueId" element={<LeaguePage />} /> {/* league page */}
-            <Route path="/club/:clubId" element={<ClubPage />} /> {/* club page*/}
-            <Route path="/about" element={<About />} /> {/* about page - static - possible change */}
-            <Route path="/help" element={<Help />} /> {/* help page - possible change */}
-            <Route path="/admin-login" element={<AdminLogin />} /> {/* Admin login */}
+            <Route path="/" element={<Home />} />
 
-            {/* Admin console page - only for auth users */}
+            <Route path="/login" element={<Login />} />
+
+            <Route path="/clubs" element={<ClubListPage />} />
+
+            <Route path="/league/:leagueId" element={<LeaguePage />} />
+            <Route path="/club/:clubId" element={<ClubPage />} />
+            <Route path="/about" element={<About />} />
+            <Route path="/help" element={<Help />} />
+            <Route path="/admin-login" element={<AdminLogin />} />
+            {/* user story #11 - route for the match report page */}
+            {/* this route takes three pieces of information from the url: */}
+            {/* competitionType = "championship" or "league" */}
+            {/* competitionId = e.g. "munster-championship" or "sigerson-cup" */}
+            {/* fixtureId = the unique id of the specific game */}
+            {/* when someone visits /report/championship/sigerson-cup/abc123, it shows the match report for that game */}
+            <Route path="/report/:competitionType/:competitionId/:fixtureId" element={<MatchReporter />} />
+
+            {/* admin console is protected - only logged-in admins can access it */}
             <Route
               path="/admin"
               element={
-                <ProtectedRoute> {/* checks if user logged in before showing*/}
+                <ProtectedRoute>
                   <AdminMatchConsole />
                 </ProtectedRoute>
               }
@@ -130,6 +232,15 @@ export default function App() {
           </Routes>
         </main>
       </>
+  );
+}
+
+// main app component that wraps everything with authentication provider
+// this makes user login state available to all pages
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
     </AuthProvider>
   );
 }

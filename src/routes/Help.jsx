@@ -1,7 +1,7 @@
 // simple, static help page
 // no database or react calls
 // contains contact info for customers to reach out
-// For easy navigation, and finding out info about OneClub - COULD BE CHANGED BASED ON ADMIN - POSSIBLE ITERATION 3
+// for easy navigation, and finding out info about oneclub - could be changed based on admin
 // Reference - used W3Schools to assist with this, https://www.w3schools.com/
 export default function Help() {
   return (

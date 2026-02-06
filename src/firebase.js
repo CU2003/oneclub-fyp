@@ -1,5 +1,5 @@
 // sets up firebase connection for the web app, using settings from enc.local
-// auth is for sign-in and roles e.g. admin - iteration 2
+// auth is for sign-in and roles e.g. admin - iteration 3
 // db is for firestore where fixtures and tables are stored - live events to be done.
 // reference https://www.youtube.com/watch?v=ig91zc-ERSE&t=140s
 // assisted me with the setting up of firebase/firestore
@@ -22,3 +22,4 @@ const app = initializeApp({ // creates the single firebase app instance OneClub 
 // exported into other files so rest of the web app use
 export const auth = getAuth(app); // to be used for further iterations - e.g. verification backlog - ITERATION 2
 export const db = getFirestore(app); // storage of fixtures, tables etc. PLANNED ITERATION, SOON TO BE LIVE EVENTS!!!!
+

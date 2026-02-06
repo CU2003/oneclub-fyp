@@ -8,21 +8,19 @@ import React from "react";
 import { Navigate } from "react-router-dom"; // redirect to another page
 import { useAuth } from "./AuthContext.jsx"; // // logged in users from authcontext
 
-// emails allowed to access admin match console - possible change further down, be pulled from somewhere else
-const ADMIN_EMAILS = [
-    "kilbrittaingaa@oneclub.com",
-    "ballygunnergaa@oneclub.com",
-];
-
 function ProtectedRoute({ children }) { // wraps around any page we want to protect
-  const { currentUser } = useAuth(); // gets logged in user
+  const { currentUser, userDoc } = useAuth(); // gets logged in user + their Firestore profile
 
 
   if (!currentUser) {
     return <Navigate to="/admin-login" replace />; // not logged in - goes to admin login page
   }
 
-  const isAdmin = ADMIN_EMAILS.includes(currentUser.email); // checks if log in email is in admin list
+  // admin access is controlled by the Firestore user profile role
+  // (users/{uid}.role === "admin") rather than a hard-coded email allow-list.
+  // this checks if the user's role in firestore is "admin"
+  // we check the role field in the user's firestore profile, which is more flexible
+  const isAdmin = userDoc?.role === "admin";
 
     // not logged in, shows a message where not allowed to update - to be changed further down the line possibly
   if (!isAdmin) {

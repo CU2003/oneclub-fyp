@@ -1,0 +1,16 @@
+{
+  "source": "Cork GAA Official Website",
+  "county": "Cork",
+  "lastUpdated": "2026-01-01",
+  "divisions": {
+    "Carbery": [
+  { "name": "Argideen Rangers", "clubId": "argideen-rangers" },
+  { "name": "Ballinascarthy", "clubId": "ballinascarthy" },
+  { "name": "Bandon", "clubId": "bandon" },
+  { "name": "Bantry Blues", "clubId": "bantry-blues" },
+  { "name": "Barryroe", "clubId": "barryroe" },
+  { "name": "Carbery Rangers", "clubId": "carbery-rangers" },
+  { "name": "Kilbrittain", "clubId": "kilbrittain" }
+]
+  }
+}
