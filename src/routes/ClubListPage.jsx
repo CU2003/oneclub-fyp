@@ -32,13 +32,44 @@ export default function ClubListPage() {
     loadClubs();
   }, []);
 
+  // helper function to check if a club matches the search term
+  // handles abbreviations like "UCC" matching "University College Cork"
+  function matchesSearch(clubName, searchTerm) {
+    const name = (clubName || "").toLowerCase();
+    const term = searchTerm.toLowerCase();
+    
+    // Direct substring match (existing behavior)
+    if (name.includes(term) || name === term) return true;
+    
+    // Abbreviation matching - check if search term matches first letters of words
+    const words = name.split(/\s+/).filter(w => w.length > 0);
+    const abbreviation = words.map(w => w[0]).join('');
+    if (abbreviation.includes(term) || abbreviation === term) return true;
+    
+    // Common abbreviations mapping for UCC
+    const commonAbbrevs = {
+      'ucc': 'university college cork',
+    };
+    
+    // Check if search term is a known abbreviation
+    if (commonAbbrevs[term] && name.includes(commonAbbrevs[term])) return true;
+    
+    // Check if any known abbreviation matches the club name
+    for (const [abbrev, fullName] of Object.entries(commonAbbrevs)) {
+      if (name.includes(fullName) && abbrev.includes(term)) return true;
+    }
+    
+    return false;
+  }
+
   // filtering clubs based on what the user searches for
   // only recalculates when clubs or search text changes
+  // now supports abbreviations like "UCC" matching "University College Cork"
   const filtered = useMemo(() => {
-    const s = search.trim().toLowerCase();
+    const s = search.trim();
     if (!s) return clubs; // if search is empty, show all clubs
-    // otherwise only show clubs whose name matches the search
-    return clubs.filter((c) => (c.name || "").toLowerCase().includes(s));
+    // otherwise show clubs whose name matches the search (including abbreviations)
+    return clubs.filter((c) => matchesSearch(c.name, s));
   }, [clubs, search]);
 
   return (

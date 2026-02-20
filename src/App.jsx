@@ -34,6 +34,8 @@ import AdminMatchConsole from "./routes/AdminMatchConsole.jsx";
 
 // user story #11 - this is the page that shows the full match report with all the details
 import MatchReporter from "./routes/MatchReporter.jsx";
+// user story 10 - supporter live timeline and match clock page
+import FixtureTimeline from "./routes/FixtureTimeline.jsx";
 import ProtectedRoute from "./ProtectedRoute.jsx";
 import { AuthProvider, useAuth } from "./AuthContext.jsx";
 import { auth } from "./firebase";
@@ -59,8 +61,43 @@ function AppContent() {
   const navigate = useNavigate();
   const { currentUser, userDoc } = useAuth(); // getting logged-in user and their profile
 
+  // check if the current user is an admin based on their Firestore profile
+  // this lets us show admin-only links in the settings menu (like the admin console)
+  const isAdmin = userDoc?.role === "admin";
+
+  // helper function to check if a club matches the search term
+  // handles abbreviations like "UCC" matching "University College Cork"
+  function matchesSearch(clubName, searchTerm) {
+    const name = (clubName || "").toLowerCase();
+    const term = searchTerm.toLowerCase();
+    
+    // Direct substring match (existing behavior)
+    if (name.includes(term) || name === term) return true;
+    
+    // Abbreviation matching - check if search term matches first letters of words
+    const words = name.split(/\s+/).filter(w => w.length > 0);
+    const abbreviation = words.map(w => w[0]).join('');
+    if (abbreviation.includes(term) || abbreviation === term) return true;
+    
+    // Common abbreviations mapping for UCC
+    const commonAbbrevs = {
+      'ucc': 'university college cork',
+    };
+    
+    // Check if search term is a known abbreviation
+    if (commonAbbrevs[term] && name.includes(commonAbbrevs[term])) return true;
+    
+    // Check if any known abbreviation matches the club name
+    for (const [abbrev, fullName] of Object.entries(commonAbbrevs)) {
+      if (name.includes(fullName) && abbrev.includes(term)) return true;
+    }
+    
+    return false;
+  }
+
   // user story 2 - when the user presses enter or clicks search, find the club and take them to the club page
   // first tries to find a club by name in firestore, then navigates to the correct club ID
+  // now supports abbreviations like "UCC" matching "University College Cork"
   async function onSearchSubmit(e) {
     e.preventDefault();
     const searchTerm = q.trim();
@@ -70,14 +107,13 @@ function AppContent() {
       // first try to find a club by name in firestore
       // this handles cases where the document ID doesn't match the search term (like UCC_ID vs "UCC")
       const clubsRef = collection(db, "clubs");
-      const searchLower = searchTerm.toLowerCase();
       
       // get all clubs and filter by name (firestore doesn't support case-insensitive search easily)
       const allClubs = await getDocs(clubsRef);
       const matchingClub = allClubs.docs.find((doc) => {
         const clubData = doc.data();
-        const clubName = (clubData.name || "").toLowerCase();
-        return clubName.includes(searchLower) || clubName === searchLower;
+        const clubName = clubData.name || "";
+        return matchesSearch(clubName, searchTerm);
       });
 
       if (matchingClub) {
@@ -169,6 +205,13 @@ function AppContent() {
                   <Link to="/clubs">Club listing</Link>
                 </li>
 
+                {/* admin-only link so admins can always reach the console, even if no fixtures are visible */}
+                {isAdmin && (
+                  <li>
+                    <Link to="/admin">Admin console</Link>
+                  </li>
+                )}
+
                 {/* showing different menu items based on login status */}
                 {!currentUser ? (
                   <>
@@ -202,23 +245,25 @@ function AppContent() {
           {/* when someone visits a web address like /club/kilbrittain, it shows the right page */}
           <Routes>
             <Route path="/" element={<Home />} />
-
             <Route path="/login" element={<Login />} />
-
             <Route path="/clubs" element={<ClubListPage />} />
-
             <Route path="/league/:leagueId" element={<LeaguePage />} />
             <Route path="/club/:clubId" element={<ClubPage />} />
             <Route path="/about" element={<About />} />
             <Route path="/help" element={<Help />} />
             <Route path="/admin-login" element={<AdminLogin />} />
-            {/* user story #11 - route for the match report page */}
-            {/* this route takes three pieces of information from the url: */}
-            {/* competitionType = "championship" or "league" */}
-            {/* competitionId = e.g. "munster-championship" or "sigerson-cup" */}
-            {/* fixtureId = the unique id of the specific game */}
-            {/* when someone visits /report/championship/sigerson-cup/abc123, it shows the match report for that game */}
-            <Route path="/report/:competitionType/:competitionId/:fixtureId" element={<MatchReporter />} />
+            {/* user story #11 route for the match report page */}
+            {/* this route takes three pieces of information from the url: competitionType, compid, fixtureid */}
+            <Route
+              path="/report/:competitionType/:competitionId/:fixtureId"
+              element={<MatchReporter />}
+            />
+            {/* supporter view - live fixture timeline page */}
+            {/* user story 10 - lets a gaa supporter open the live timeline and match clock for one game when clicked on */}
+            <Route
+              path="/fixture/:competitionType/:competitionId/:fixtureId"
+              element={<FixtureTimeline />}
+            />
 
             {/* admin console is protected - only logged-in admins can access it */}
             <Route

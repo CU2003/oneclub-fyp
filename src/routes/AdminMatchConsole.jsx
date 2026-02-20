@@ -14,7 +14,8 @@
 // start/stop/reset the match clock
 // update goals, points, cards for both teams
 // update the match status - fh, sh, ft
-// changes are saved to firestore and displayed on the home page.
+// changes are saved to firestore and displayed on the home page
+// lets the admin control the live match clock and create timeline events (scores, cards, status) that supporters see on the supporter views
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -31,6 +32,7 @@ import {
   updateDoc,
   serverTimestamp, // stores time when clock is started
   addDoc, // user story 13 - create fixtures
+  deleteDoc, // used to remove scoring events when corrections are made
 } from "firebase/firestore";
 
 // admins clubs is loaded from firestore (users/uid)
@@ -59,6 +61,25 @@ function AdminMatchConsole() {
   const [newVenue, setNewVenue] = useState("");
   const [createError, setCreateError] = useState("");
   const [createSuccess, setCreateSuccess] = useState("");
+  
+
+  // user story 14 - admin enters lineups prior to the game so reporters and supporters can see who is playing
+  // reference: https://chatgpt.com/share/698f5263-92fc-8004-bd06-d94790f01d1c (lines 66-72)
+  // I took code from this chat and used it for my project (made changes to suit also).
+  // newHomeLineup / newAwayLineup: text from the create-fixture form (one player per line). Parsed and saved as arrays when the admin creates a new game.
+  const [newHomeLineup, setNewHomeLineup] = useState("");
+  const [newAwayLineup, setNewAwayLineup] = useState("");
+  // editingHomeLineup / editingAwayLineup: text for the Team Lineups section when editing an existing fixture. loaded from fixture then saved using save lineups.
+  const [editingHomeLineup, setEditingHomeLineup] = useState("");
+  const [editingAwayLineup, setEditingAwayLineup] = useState("");
+  // pending scoring event confirmation (team, type, and previewed score)
+  const [pendingScore, setPendingScore] = useState(null);
+  const [pendingScorer, setPendingScorer] = useState("");
+  const [showScorerModal, setShowScorerModal] = useState(false);
+  const [scorerError, setScorerError] = useState("");
+  
+  // verifier name input for when admin publishes a match
+  const [verifierName, setVerifierName] = useState("");
 
   // club name is loaded from the admins firestore profile
   const [clubName, setClubName] = useState(null);
@@ -204,12 +225,29 @@ function AdminMatchConsole() {
       // uses the fixtureCollectionPath we calculated earlier
       const fixturesCol = collection(db, ...fixtureCollectionPath);
       
+      // user story 14 - reference: https://chatgpt.com/share/698f5263-92fc-8004-bd06-d94790f01d1c (lines 226-245)
+      // I took code from this chat and used it for my project (made changes to suit also).
+      // parse lineup text (one player per line) into arrays for Firestore
+      // split by newline, trim each line, drop empty lines; reporters and supporters read these from the fixture doc
+      const homeLineupArray = newHomeLineup
+        .split("\n")
+        .map(line => line.trim())
+        .filter(line => line.length > 0);
+      const awayLineupArray = newAwayLineup
+        .split("\n")
+        .map(line => line.trim())
+        .filter(line => line.length > 0);
+      
       // create a new game document in firestore with all the information
       await addDoc(fixturesCol, {
         homeTeam: clubName,  // the admin's club is always the home team
         awayTeam: newAwayTeam.trim(),  // the opponent the admin typed in
         date: matchDate,  // when the game will be played
         venue: newVenue.trim() || null,  // where the game will be played (optional)
+
+        // user story 14 - save lineups on the fixture so MatchReporter and FixtureTimeline can show who is playing
+        homeLineup: homeLineupArray.length > 0 ? homeLineupArray : null,
+        awayLineup: awayLineupArray.length > 0 ? awayLineupArray : null,
 
         // baseline match fields (so it behaves like Kilbrittain fixtures)
         // start everything at zero since the game hasn't been played yet
@@ -234,6 +272,9 @@ function AdminMatchConsole() {
       setNewAwayTeam("");
       setNewDateTime("");
       setNewVenue("");
+      // user story 14 - clear lineup state after fixture creation (lines 275-276)
+      setNewHomeLineup("");
+      setNewAwayLineup("");
     } catch (err) {
       // if something goes wrong, log it and show an error message
       console.error("Failed to create fixture:", err);
@@ -294,6 +335,7 @@ function AdminMatchConsole() {
       setSelectedFixture(null);
       setElapsedSeconds(0);
       setIsClockRunning(false);
+      setVerifierName(""); // clear verifier name when no fixture selected
       return;
     }
 
@@ -312,6 +354,8 @@ function AdminMatchConsole() {
         // used chatgpt to help generate code that would allow the clock to show for both the adminmatchconsole
         // and the home page for supporters. https://chatgpt.com/share/69209f75-a680-8004-ba40-c34a911b6e4f
         // lines 140 - 179 ~
+        // user story 10 - keeps the admin clock in sync with the supporter clocks on the home page and fixture timeline
+        // works out total elapsed seconds from the base clock value and the time since clockstartedat so every screen shows the same time
         // base seconds stored in Firestore
         const base =
           typeof data.clockSeconds === "number" ? data.clockSeconds : 0;
@@ -329,11 +373,29 @@ function AdminMatchConsole() {
         setSelectedFixture({ id: snap.id, ...data });
         setElapsedSeconds(total);
         setIsClockRunning(!!data.clockRunning);
+        
+        // user story 14 - reference: https://chatgpt.com/share/698f5263-92fc-8004-bd06-d94790f01d1c (lines 372-383)
+        // I took code from this chat and used it for my project (made changes to suit also).
+        // load lineups from fixture into editing state (convert arrays back to text, one per line)
+        // when admin selects a fixture, populate the Team Lineups textareas so they can edit and save
+        if (Array.isArray(data.homeLineup)) {
+          setEditingHomeLineup(data.homeLineup.join("\n"));
+        } else {
+          setEditingHomeLineup("");
+        }
+        if (Array.isArray(data.awayLineup)) {
+          setEditingAwayLineup(data.awayLineup.join("\n"));
+        } else {
+          setEditingAwayLineup("");
+        }
       } else {
         // if documnet no longer exists, clear everything
         setSelectedFixture(null);
         setElapsedSeconds(0);
         setIsClockRunning(false);
+        // user story 14 - clear lineup state when fixture document deleted (lines 395-396)
+        setEditingHomeLineup("");
+        setEditingAwayLineup("");
       }
     });
 
@@ -402,11 +464,18 @@ function AdminMatchConsole() {
     return { homeYellow, homeRed, awayYellow, awayRed };
   }
 
+  // reference: https://chatgpt.com/share/698dd95f-c4bc-8004-abb2-f58a3426cc2b
+  // used this chatgpt example to follow a pattern where scores, cards and status updates are all saved as events in one subcollection under each game
+  // also used it to confirm scores in a popup with a frozen clock time, and to remove the latest matching event when undoing scores or cards so the supporter timeline stays accurate
+  // lines 456-663 - took and implemented the pattern for confirming scores in a popup, freezing the clock time, saving score events, and undoing the latest matching score event
+  // lines 672-788 and 794-831 - took and implemented the pattern for adding card events, undoing the latest matching card event, and logging status change events into the same events subcollection for the supporter timeline
   // user story 3 and 5 - updates the score in firestore
   // team can be "home" or "away"
   // scoreType can be "goal" or "point"
   // delta is +1 to add a score, or -1 to remove one (for corrections)
-  async function changeScore(team, scoreType, delta) {
+  // playerName is optional - used when logging who scored
+  // eventClockSeconds lets us freeze the clock time at the moment the admin clicked the button
+  async function changeScore(team, scoreType, delta, playerName, eventClockSeconds) {
     if (!selectedFixtureId || !selectedFixture) return; // no fixture selected - do nothing
     setActionError("");
 
@@ -443,10 +512,177 @@ function AdminMatchConsole() {
         awayGoals,
         awayPoints,
       });
+
+      // log scoring event only when adding scores (not corrections)
+      // and only if a player name is provided
+      // user story 10 - when a new score is added, create a timeline event so supporters can see who scored, the score at that moment, and the match time
+      // clockseconds stores the frozen time from when the admin clicked the score button so the timeline time does not keep moving after the popup
+      if (delta > 0 && playerName) {
+        // work out the team names for a readable score label
+        const eventHomeName = selectedFixture.homeTeam || "Home";
+        const eventAwayName = selectedFixture.awayTeam || "Away";
+
+        // create a subcollection "events" under this fixture to store scoring events
+        const eventsCol = collection(
+          db,
+          ...fixtureCollectionPath,
+          selectedFixtureId,
+          "events"
+        );
+
+        const clockAtEvent =
+          typeof eventClockSeconds === "number"
+            ? eventClockSeconds
+            : elapsedSeconds;
+
+        await addDoc(eventsCol, {
+          type: "score",
+          team,
+          playerName,
+          scoreType,
+          // clock time when the score was recorded
+          clockSeconds: clockAtEvent,
+          createdAt: serverTimestamp(),
+          // snapshot of the score at this moment
+          homeGoals,
+          homePoints,
+          awayGoals,
+          awayPoints,
+          // readable combined score string for reporters
+          scoreLabel: `${eventHomeName} ${homeGoals}-${homePoints} ${eventAwayName} ${awayGoals}-${awayPoints}`,
+        });
+      }
+
+      // when making a correction (delta < 0), try to remove the most recent
+      // matching scoring event from the timeline so supporters don't see
+      // scores that were undone by the admin
+      // user story 10 - this keeps the live timeline clean so supporters only see scores that still count after admin corrections
+      if (delta < 0) {
+        try {
+          const eventsCol = collection(
+            db,
+            ...fixtureCollectionPath,
+            selectedFixtureId,
+            "events"
+          );
+          const snap = await getDocs(eventsCol);
+          if (!snap.empty) {
+            const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+            // only look at events for this team + scoreType
+            const matching = all
+              .filter(
+                (ev) => ev.team === team && ev.scoreType === scoreType
+              )
+              .sort((a, b) => {
+                // newest by clockSeconds, then by createdAt if available
+                const aClock =
+                  typeof a.clockSeconds === "number" ? a.clockSeconds : 0;
+                const bClock =
+                  typeof b.clockSeconds === "number" ? b.clockSeconds : 0;
+                if (aClock !== bClock) return bClock - aClock;
+                const aCreated = a.createdAt?.toMillis
+                  ? a.createdAt.toMillis()
+                  : 0;
+                const bCreated = b.createdAt?.toMillis
+                  ? b.createdAt.toMillis()
+                  : 0;
+                return bCreated - aCreated;
+              });
+            const toDelete = matching[0];
+            if (toDelete) {
+              const evRef = doc(
+                db,
+                ...fixtureCollectionPath,
+                selectedFixtureId,
+                "events",
+                toDelete.id
+              );
+              await deleteDoc(evRef);
+            }
+          }
+        } catch (innerErr) {
+          console.error("Failed to remove scoring event for correction:", innerErr);
+          // do not surface this to the admin UI; score correction has already applied
+        }
+      }
     } catch (err) {
       console.error(err);
       setActionError("Could not update score.");
     }
+  }
+
+  // opens a confirmation popup when admin clicks a score button
+  // this lets them choose the scorer from the lineup and see the updated score before saving
+  // user story 10 - prepares the scoring popup with a frozen clock time and preview of the new score
+  // this is how we capture the exact moment of the score and link it to a player for the supporter timeline
+  function openScorerConfirm(team, scoreType) {
+    if (!selectedFixture) return;
+
+    // start from current scores
+    let { homeGoals, homePoints, awayGoals, awayPoints } = getScores();
+
+    // simulate adding one score so we can show the updated score in the popup
+    if (team === "home") {
+      if (scoreType === "goal") {
+        homeGoals = homeGoals + 1;
+      } else {
+        homePoints = homePoints + 1;
+      }
+    } else {
+      if (scoreType === "goal") {
+        awayGoals = awayGoals + 1;
+      } else {
+        awayPoints = awayPoints + 1;
+      }
+    }
+
+    setPendingScore({
+      team,
+      scoreType,
+      homeGoals,
+      homePoints,
+      awayGoals,
+      awayPoints,
+      // freeze the clock time at the moment the admin clicked the score button
+      clockSeconds: elapsedSeconds,
+    });
+    setPendingScorer("");
+    setScorerError("");
+    setShowScorerModal(true);
+  }
+
+  // confirm button in the popup - saves the score and logs event
+  // user story 10 - once the admin picks a player and confirms, this calls changescore with the frozen clock time so the event shows in the live timeline
+  async function confirmScoringEvent() {
+    if (!pendingScore) return;
+    if (!pendingScorer) {
+      setScorerError("Please select a player.");
+      return;
+    }
+
+    try {
+      await changeScore(
+        pendingScore.team,
+        pendingScore.scoreType,
+        +1,
+        pendingScorer,
+        pendingScore.clockSeconds
+      );
+      setShowScorerModal(false);
+      setPendingScore(null);
+      setPendingScorer("");
+      setScorerError("");
+    } catch (err) {
+      console.error(err);
+      setScorerError("Could not save scoring event. Try again.");
+    }
+  }
+
+  function cancelScoringEvent() {
+    setShowScorerModal(false);
+    setPendingScore(null);
+    setPendingScorer("");
+    setScorerError("");
   }
 
   // user story 3 and 5 - updates cards in firestore
@@ -488,6 +724,83 @@ function AdminMatchConsole() {
         awayYellowCards: awayYellow,
         awayRedCards: awayRed,
       });
+
+      // when adding a card (delta > 0), log a card event in the timeline
+      // user story 10 - card events go into the same events list so supporters can see bookings on the live timeline with the match time and running totals
+      if (delta > 0) {
+        try {
+          const eventsCol = collection(
+            db,
+            ...fixtureCollectionPath,
+            selectedFixtureId,
+            "events"
+          );
+          await addDoc(eventsCol, {
+            type: "card",
+            team,
+            cardType,
+            clockSeconds: elapsedSeconds,
+            createdAt: serverTimestamp(),
+            homeYellow,
+            homeRed,
+            awayYellow,
+            awayRed,
+          });
+        } catch (innerErr) {
+          console.error("Failed to log card event:", innerErr);
+        }
+      }
+
+      // when correcting a card (delta < 0), remove the most recent matching card event
+      // user story 10 - this stops old card events from staying on the supporter timeline when an admin has undone them
+      if (delta < 0) {
+        try {
+          const eventsCol = collection(
+            db,
+            ...fixtureCollectionPath,
+            selectedFixtureId,
+            "events"
+          );
+          const snap = await getDocs(eventsCol);
+          if (!snap.empty) {
+            const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+            const matching = all
+              .filter(
+                (ev) =>
+                  ev.type === "card" &&
+                  ev.team === team &&
+                  ev.cardType === cardType
+              )
+              .sort((a, b) => {
+                const aClock =
+                  typeof a.clockSeconds === "number" ? a.clockSeconds : 0;
+                const bClock =
+                  typeof b.clockSeconds === "number" ? b.clockSeconds : 0;
+                if (aClock !== bClock) return bClock - aClock;
+                const aCreated = a.createdAt?.toMillis
+                  ? a.createdAt.toMillis()
+                  : 0;
+                const bCreated = b.createdAt?.toMillis
+                  ? b.createdAt.toMillis()
+                  : 0;
+                return bCreated - aCreated;
+              });
+            const toDelete = matching[0];
+            if (toDelete) {
+              const evRef = doc(
+                db,
+                ...fixtureCollectionPath,
+                selectedFixtureId,
+                "events",
+                toDelete.id
+              );
+              await deleteDoc(evRef);
+            }
+          }
+        } catch (innerErr) {
+          console.error("Failed to remove card event for correction:", innerErr);
+        }
+      }
     } catch (err) {
       console.error(err);
       setActionError("Could not update cards.");
@@ -508,6 +821,25 @@ function AdminMatchConsole() {
       );
       // save the new status to firestore so supporters see it instantly
       await updateDoc(fixtureRef, { status });
+
+      // log a status change event so supporters can see it in the timeline
+      // user story 10 - each status change is stored with the clock time so the live timeline shows when the game moved between stages
+      try {
+        const eventsCol = collection(
+          db,
+          ...fixtureCollectionPath,
+          selectedFixtureId,
+          "events"
+        );
+        await addDoc(eventsCol, {
+          type: "status",
+          status,
+          clockSeconds: elapsedSeconds,
+          createdAt: serverTimestamp(),
+        });
+      } catch (innerErr) {
+        console.error("Failed to log status event:", innerErr);
+      }
     } catch (err) {
       console.error(err);
       setActionError("Could not update status.");
@@ -522,10 +854,15 @@ function AdminMatchConsole() {
   // this publishes the match so detailed stats are hidden on home page
   // when a match is published, it means the detailed stats (cards, clock) are hidden on the home page
   // only the final score and teams are shown, and users can click "view match report" to see everything
+  // also stores who verified the result and when, so club secretaries can see verification info
+  // admin can enter their name before publishing to specify who verified the result
   async function publishMatch() {
     // if no game is selected, don't do anything
     if (!selectedFixtureId) return;
     setActionError("");
+
+    // check if admin entered a verifier name
+    const nameToUse = verifierName.trim() || clubName || currentUser?.email || "Admin";
 
     try {
       // find the game in firestore
@@ -534,8 +871,17 @@ function AdminMatchConsole() {
         ...fixtureCollectionPath,
         selectedFixtureId
       );
+      // user story 18 - reference: https://stackoverflow.com/questions/60056185/convert-firestore-timestamp-to-date-into-different-format (timestamp format used when displaying verifiedAt; here we store serverTimestamp())
       // set published to true, which tells the home page to hide detailed stats
-      await updateDoc(fixtureRef, { published: true });
+      // also store who verified (admin's entered name or club name) and when (server timestamp)
+      // this lets journalist/reporters see who verified the result when viewing the match report
+      await updateDoc(fixtureRef, { 
+        published: true,
+        verifiedBy: nameToUse,
+        verifiedAt: serverTimestamp(),
+      });
+      // clear the verifier name input after successful publish
+      setVerifierName("");
     } catch (err) {
       // if something goes wrong, log it and show an error
       console.error(err);
@@ -546,6 +892,7 @@ function AdminMatchConsole() {
   // user story #11 - unpublishes the match so detailed stats are shown again on home page
   // when a match is unpublished, all the detailed stats (cards, clock) are shown on the home page again
   // this is useful if the admin made a mistake and wants to fix something
+  // clears verification info when unpublishing so it can be re-verified when published again
   
   async function unpublishMatch() {
     // if no game is selected, don't do anything
@@ -560,7 +907,12 @@ function AdminMatchConsole() {
         selectedFixtureId
       );
       // set published to false, which tells the home page to show all detailed stats again
-      await updateDoc(fixtureRef, { published: false });
+      // user story 18 - reference: same as publish (verifiedBy/verifiedAt). also clear verification info since the match is being unpublished
+      await updateDoc(fixtureRef, { 
+        published: false,
+        verifiedBy: null,
+        verifiedAt: null,
+      });
     } catch (err) {
       // if something goes wrong, log it and show an error
       console.error(err);
@@ -653,6 +1005,47 @@ function AdminMatchConsole() {
     setElapsedSeconds(0);
     setIsClockRunning(false);
     setActionError("");
+    // user story 14 - clear lineup state when closing fixture (lines 1006-1007)
+    setEditingHomeLineup("");
+    setEditingAwayLineup("");
+    setVerifierName(""); // clear verifier name when closing fixture
+  }
+  
+  // user story 14 - reference: https://chatgpt.com/share/698f5263-92fc-8004-bd06-d94790f01d1c (lines 1014-1045)
+  // I took code from this chat and used it for my project (made changes to suit also).
+  // save lineups for existing fixture
+  async function saveLineups() {
+    if (!selectedFixtureId) return;
+    setActionError("");
+    
+    try {
+      // parse lineups from text input (one player per line)
+      const homeLineupArray = editingHomeLineup
+        .split("\n")
+        .map(line => line.trim())
+        .filter(line => line.length > 0);
+      const awayLineupArray = editingAwayLineup
+        .split("\n")
+        .map(line => line.trim())
+        .filter(line => line.length > 0);
+      
+      const fixtureRef = doc(
+        db,
+        ...fixtureCollectionPath,
+        selectedFixtureId
+      );
+      
+      await updateDoc(fixtureRef, {
+        homeLineup: homeLineupArray.length > 0 ? homeLineupArray : null,
+        awayLineup: awayLineupArray.length > 0 ? awayLineupArray : null,
+      });
+      
+      setActionError(""); // Clear any previous errors
+      // Success - the onSnapshot will update the UI automatically
+    } catch (err) {
+      console.error(err);
+      setActionError("Could not save lineups.");
+    }
   }
 
   // formats one fixture as home vs away and date
@@ -787,6 +1180,49 @@ function AdminMatchConsole() {
                   padding: "6px 8px",
                   borderRadius: 6,
                   border: "1px solid #ddd",
+                }}
+              />
+            </label>
+          </div>
+          
+          {/* user story 14 - reference: https://chatgpt.com/share/698f5263-92fc-8004-bd06-d94790f01d1c (lines 1178-1219) - lineups input, one player per line. I took code from this chat and used it for my project (made changes to suit also). */}
+          <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+            <label style={{ fontSize: 14, flex: 1, minWidth: 300 }}>
+              {clubName} Lineup (one player per line, optional)
+              <textarea
+                value={newHomeLineup}
+                onChange={(e) => setNewHomeLineup(e.target.value)}
+                placeholder="1. Player Name&#10;2. Player Name&#10;3. Player Name&#10;..."
+                style={{
+                  display: "block",
+                  marginTop: 4,
+                  width: "100%",
+                  padding: "6px 8px",
+                  borderRadius: 6,
+                  border: "1px solid #ddd",
+                  minHeight: "120px",
+                  fontFamily: "inherit",
+                  resize: "vertical",
+                }}
+              />
+            </label>
+            
+            <label style={{ fontSize: 14, flex: 1, minWidth: 300 }}>
+              {newAwayTeam || "Away Team"} Lineup (one player per line, optional)
+              <textarea
+                value={newAwayLineup}
+                onChange={(e) => setNewAwayLineup(e.target.value)}
+                placeholder="1. Player Name&#10;2. Player Name&#10;3. Player Name&#10;..."
+                style={{
+                  display: "block",
+                  marginTop: 4,
+                  width: "100%",
+                  padding: "6px 8px",
+                  borderRadius: 6,
+                  border: "1px solid #ddd",
+                  minHeight: "120px",
+                  fontFamily: "inherit",
+                  resize: "vertical",
                 }}
               />
             </label>
@@ -952,7 +1388,7 @@ function AdminMatchConsole() {
             </div>
 
             {/* user story 3 - score buttons for adding points and goals */}
-            {/* when the admin clicks these buttons, it adds 1 to the score and saves it to the database */}
+            {/* when the admin clicks these buttons, it opens a confirmation popup to log the scorer and save the score */}
             <div style={{ marginTop: "1rem" }}>
               <h4>Score buttons</h4>
               <div
@@ -963,16 +1399,16 @@ function AdminMatchConsole() {
                   marginBottom: "0.5rem",
                 }}
               >
-                <button onClick={() => changeScore("home", "point", +1)}>
+                <button onClick={() => openScorerConfirm("home", "point")}>
                   + {homeName} point
                 </button>
-                <button onClick={() => changeScore("home", "goal", +1)}>
+                <button onClick={() => openScorerConfirm("home", "goal")}>
                   + {homeName} goal
                 </button>
-                <button onClick={() => changeScore("away", "point", +1)}>
+                <button onClick={() => openScorerConfirm("away", "point")}>
                   + {awayName} point
                 </button>
-                <button onClick={() => changeScore("away", "goal", +1)}>
+                <button onClick={() => openScorerConfirm("away", "goal")}>
                   + {awayName} goal
                 </button>
               </div>
@@ -1084,6 +1520,61 @@ function AdminMatchConsole() {
                 </button>
               </div>
             </div>
+            
+            {/* user story 14 - reference: https://chatgpt.com/share/698f5263-92fc-8004-bd06-d94790f01d1c (lines 1514-1566) - lineups editing for existing fixtures. I took code from this chat and used it for my project (made changes to suit also). */}
+            <div style={{ marginTop: "1rem" }}>
+              <h4>Team Lineups</h4>
+              <p style={{ fontSize: "0.9rem", opacity: 0.7, marginBottom: "0.5rem" }}>
+                Enter one player per line. Leave empty if not available.
+              </p>
+              <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+                <label style={{ fontSize: 14, flex: 1, minWidth: 300 }}>
+                  {homeName} Lineup
+                  <textarea
+                    value={editingHomeLineup}
+                    onChange={(e) => setEditingHomeLineup(e.target.value)}
+                    placeholder="1. Player Name&#10;2. Player Name&#10;3. Player Name&#10;..."
+                    style={{
+                      display: "block",
+                      marginTop: 4,
+                      width: "100%",
+                      padding: "6px 8px",
+                      borderRadius: 6,
+                      border: "1px solid #ddd",
+                      minHeight: "120px",
+                      fontFamily: "inherit",
+                      resize: "vertical",
+                    }}
+                  />
+                </label>
+                
+                <label style={{ fontSize: 14, flex: 1, minWidth: 300 }}>
+                  {awayName} Lineup
+                  <textarea
+                    value={editingAwayLineup}
+                    onChange={(e) => setEditingAwayLineup(e.target.value)}
+                    placeholder="1. Player Name&#10;2. Player Name&#10;3. Player Name&#10;..."
+                    style={{
+                      display: "block",
+                      marginTop: 4,
+                      width: "100%",
+                      padding: "6px 8px",
+                      borderRadius: 6,
+                      border: "1px solid #ddd",
+                      minHeight: "120px",
+                      fontFamily: "inherit",
+                      resize: "vertical",
+                    }}
+                  />
+                </label>
+              </div>
+              <button 
+                onClick={saveLineups}
+                style={{ marginTop: "0.5rem" }}
+              >
+                Save Lineups
+              </button>
+            </div>
 
             {/* user story #11 - publish/unpublish and view report for completed games */}
             {/* only show these buttons if the game status is "full time" (game is finished) */}
@@ -1091,40 +1582,94 @@ function AdminMatchConsole() {
               <div style={{ marginTop: "1rem" }}>
                 <h4>Publish Match</h4>
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.75rem" }}>
-                  {/* if the game is already published, show the unpublish button (red) */}
-                  {/* if the game is not published, show the publish button (green) */}
+                  {/* if the game is already published, show who verified it and the unpublish button */}
                   {selectedFixture?.published ? (
-                    <button
-                      onClick={unpublishMatch}
-                      style={{
-                        padding: "0.75rem 1.5rem",
-                        fontSize: "1rem",
-                        fontWeight: 600,
-                        background: "#ef4444",
-                        color: "white",
-                        border: "none",
-                        borderRadius: "6px",
-                        cursor: "pointer",
-                      }}
-                    >
-                      Unpublish Match
-                    </button>
+                    <>
+                      {/* user story 18 - show who verified and when (admin UI) */}
+                      {/* reference: https://stackoverflow.com/questions/60056185/convert-firestore-timestamp-to-date-into-different-format */}
+                      {/* shows the name of the admin who verified the result and the date and time they did it. */}
+                      {/* when an admin has already published a match, this appears above the unpublish button so they can see who verified it and when.*/}
+                      {selectedFixture?.verifiedBy && (
+                        <div style={{ 
+                          padding: "0.5rem 1rem", 
+                          background: "#f3f4f6", 
+                          borderRadius: "6px",
+                          fontSize: "0.9rem",
+                          textAlign: "center"
+                        }}>
+                          {/* verifier name stored when admin published */}
+                          Verified by: <strong>{selectedFixture.verifiedBy}</strong>
+                          {/* if we have a verification time, show it below the name (e.g. "Jan 28, 2026, 2:30 PM") */}
+                          {selectedFixture?.verifiedAt?.toDate && (
+                            <div style={{ fontSize: "0.85rem", color: "#6b7280", marginTop: "0.25rem" }}>
+                              {(() => {
+                                try {
+                                  // Firestore timestamp -> JS Date so we can format it
+                                  const date = selectedFixture.verifiedAt.toDate();
+                                  return date.toLocaleString([], {
+                                    year: "numeric",
+                                    month: "short",
+                                    day: "numeric",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  });
+                                } catch {
+                                  return "";
+                                }
+                              })()}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      <button
+                        onClick={unpublishMatch}
+                        style={{
+                          padding: "0.75rem 1.5rem",
+                          fontSize: "1rem",
+                          fontWeight: 600,
+                          background: "#ef4444",
+                          color: "white",
+                          border: "none",
+                          borderRadius: "6px",
+                          cursor: "pointer",
+                        }}
+                      >
+                        Unpublish Match
+                      </button>
+                    </>
                   ) : (
-                    <button
-                      onClick={publishMatch}
-                      style={{
-                        padding: "0.75rem 1.5rem",
-                        fontSize: "1rem",
-                        fontWeight: 600,
-                        background: "#10b981",
-                        color: "white",
-                        border: "none",
-                        borderRadius: "6px",
-                        cursor: "pointer",
-                      }}
-                    >
-                      Publish Match
-                    </button>
+                    <>
+                      {/* admin can enter their name before publishing to specify who verified the result */}
+                      <input
+                        type="text"
+                        value={verifierName}
+                        onChange={(e) => setVerifierName(e.target.value)}
+                        placeholder="Verified By:"
+                        style={{
+                          padding: "0.5rem",
+                          fontSize: "0.95rem",
+                          border: "1px solid #ddd",
+                          borderRadius: "4px",
+                          width: "100%",
+                          maxWidth: "300px",
+                        }}
+                      />
+                      <button
+                        onClick={publishMatch}
+                        style={{
+                          padding: "0.75rem 1.5rem",
+                          fontSize: "1rem",
+                          fontWeight: 600,
+                          background: "#10b981",
+                          color: "white",
+                          border: "none",
+                          borderRadius: "6px",
+                          cursor: "pointer",
+                        }}
+                      >
+                        Publish Match
+                      </button>
+                    </>
                   )}
 
                   {/* user story #11 - this button takes the admin to the match report page */}
@@ -1161,6 +1706,128 @@ function AdminMatchConsole() {
           </div>
         )}
       </section>
+
+      {/* user story 14 - reference: https://chatgpt.com/share/698f5263-92fc-8004-bd06-d94790f01d1c (lines 1770-1804) - scorer dropdown from lineup. I took code from this chat and used it for my project (made changes to suit also). */}
+      {/* scoring confirmation popup - appears on top of the page when logging a new score */}
+      {showScorerModal && pendingScore && selectedFixture && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.4)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+        >
+          <div
+            style={{
+              background: "#ffffff",
+              padding: "1rem 1.25rem",
+              borderRadius: 8,
+              maxWidth: 420,
+              width: "90%",
+              boxShadow: "0 4px 10px rgba(0,0,0,0.15)",
+            }}
+          >
+            <h4 style={{ marginTop: 0, marginBottom: "0.5rem" }}>
+              Confirm score
+            </h4>
+            <p style={{ margin: "0.25rem 0" }}>
+              <strong>
+                {pendingScore.team === "home" ? homeName : awayName}{" "}
+                {pendingScore.scoreType === "goal" ? "goal" : "point"}
+              </strong>
+            </p>
+            <p style={{ margin: "0.25rem 0" }}>
+              Time:{" "}
+              <strong>
+                {formatClock(
+                  typeof pendingScore.clockSeconds === "number"
+                    ? pendingScore.clockSeconds
+                    : elapsedSeconds
+                )}
+              </strong>
+            </p>
+            <p style={{ margin: "0.25rem 0" }}>
+              Updated score:{" "}
+              <strong>
+                {homeName} {pendingScore.homeGoals}-{pendingScore.homePoints}{" "}
+                {awayName} {pendingScore.awayGoals}-{pendingScore.awayPoints}
+              </strong>
+            </p>
+
+            <div style={{ marginTop: "0.75rem" }}>
+              <p style={{ marginBottom: 4 }}>Select scorer:</p>
+              <div
+                style={{
+                  maxHeight: 160,
+                  overflowY: "auto",
+                  border: "1px solid #ddd",
+                  borderRadius: 6,
+                  padding: "0.5rem",
+                  background: "#f9fafb",
+                }}
+              >
+                {(pendingScore.team === "home"
+                  ? selectedFixture.homeLineup || []
+                  : selectedFixture.awayLineup || []
+                ).length === 0 && (
+                  <p style={{ fontSize: 13, margin: 0 }}>
+                    No lineup entered for this team. Close and add a lineup
+                    first.
+                  </p>
+                )}
+                {(pendingScore.team === "home"
+                  ? selectedFixture.homeLineup || []
+                  : selectedFixture.awayLineup || []
+                ).map((player) => (
+                  <label
+                    key={player}
+                    style={{
+                      display: "block",
+                      fontSize: 14,
+                      cursor: "pointer",
+                      marginBottom: 2,
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="scorer"
+                      value={player}
+                      checked={pendingScorer === player}
+                      onChange={(e) => {
+                        setPendingScorer(e.target.value);
+                        setScorerError("");
+                      }}
+                      style={{ marginRight: 6 }}
+                    />
+                    {player}
+                  </label>
+                ))}
+              </div>
+              {scorerError && (
+                <p style={{ color: "red", fontSize: 13, marginTop: 4 }}>
+                  {scorerError}
+                </p>
+              )}
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: "0.5rem",
+                marginTop: "0.75rem",
+              }}
+            >
+              <button onClick={cancelScoringEvent}>Cancel</button>
+              <button onClick={confirmScoringEvent}>Confirm</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

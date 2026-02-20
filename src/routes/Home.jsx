@@ -5,6 +5,9 @@
 // live match clocks stay in sync across all devices
 // favourite clubs and fixtures update without refreshing the page
 
+// user story 10 
+// this file shows live match clocks on the home page and provides "view live timeline" buttons that navigate to the detailed timeline page
+
 // reference: https://firebase.google.com/docs/firestore/query-data/get-data
 // used firestore's getDoc to read club documents from the database.
 // loads club names from favourite club IDs so we can match them against team names and show upcoming games for clubs the user has favourited.
@@ -54,19 +57,21 @@ export default function Home() {
   const [favouriteFixtures, setFavouriteFixtures] = useState([]); // fixtures for favourited clubs
   const [favLoading, setFavLoading] = useState(false); // loading state while being fetched
 
-  // shared "now" value so clocks can tick on screen
+  // user story 10 - shared "now" value so clocks can tick on screen
+  // this updates every second to keep the match clock displaying the current time
   const [now, setNow] = useState(Date.now());
 
   // only show munster fixtures that have one of these teams
   const FEATURED_MUNSTER_TEAMS = ["Kilbrittain", "Ballygunner"];
 
-  // Grabbed this code from chatgpt - used to keep admin clock input and supporter views in sync
-  // with the clock state.
-  // https://chatgpt.com/share/69209f75-a680-8004-ba40-c34a911b6e4f Lines 46 - 49
-  // tick "now" every second so the UI clock updates
+  // user story 10 - tick now every second so the UI clock updates
+  // reference: https://chatgpt.com/share/69209f75-a680-8004-ba40-c34a911b6e4f 
+  // grabbed this code from chatgpt - used to keep admin clock input and supporter views in sync with the clock state
+  // creates a timer that runs every second and updates the "now" value
+  // cleanup stops the timer when the component is removed
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000); // creates timer taht runs every second
-    return () => clearInterval(id); // cleanup so when component is removed stop timer
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
   }, []);
 
   // loading the next premier senior hurling fixture
@@ -411,7 +416,9 @@ export default function Home() {
     });
   };
 
-  // format the seconds like mm:ss for clocks
+  // user story 10 - format the seconds like mm:ss for clocks
+  // takes a number of seconds and converts it to minutes:seconds format like 05:23
+  // this function is also used in fixturetimeline.jsx
   const fmtClock = (secs) => {
     if (!secs || secs < 0) secs = 0;
     const m = Math.floor(secs / 60);
@@ -424,6 +431,7 @@ export default function Home() {
   // user story 10 - calculate the current time on the match clock
   // takes the base seconds from the database and adds any extra time since the clock started
   // this makes sure the clock shows the right time even if the page hasn't refreshed
+  // this function is also used in fixturetimeline.jsx
   const getLiveClock = (fx) => {
     if (!fx) return "00:00";
     let secs = fx.clockSeconds ?? 0;
@@ -536,7 +544,30 @@ export default function Home() {
                   const homePoints = fx.homePoints ?? 0;
                   const awayGoals = fx.awayGoals ?? 0;
                   const awayPoints = fx.awayPoints ?? 0;
-                  const hasScore = homeGoals > 0 || homePoints > 0 || awayGoals > 0 || awayPoints > 0;
+                  const hasScore =
+                    homeGoals > 0 ||
+                    homePoints > 0 ||
+                    awayGoals > 0 ||
+                    awayPoints > 0;
+
+                  // user story 10 - reads where the fixture comes from and sets the right competition type and id
+                  // this maps the fixture source to the correct competition type and id
+                  // so the view live timeline button can open the correct live timeline page for that game
+                  let compType = null;
+                  let compId = null;
+                  if (fx.source === "munster") {
+                    compType = "championship";
+                    compId = "munster-championship";
+                  } else if (fx.source === "sigerson") {
+                    compType = "championship";
+                    compId = "sigerson-cup";
+                  } else if (fx.source === "psh") {
+                    compType = "league";
+                    compId = "premier-senior-hurling";
+                  } else if (fx.source === "psf") {
+                    compType = "league";
+                    compId = "premier-senior-football";
+                  }
 
                   return (
                     <div
@@ -600,9 +631,8 @@ export default function Home() {
                         </span>
                       </div>
 
-                      {/* reference: https://react.dev/learn/conditional-rendering */}
-                      {/* line 604 - used react's conditional rendering to show or hide the match clock based on whether the match is published */}
-                      {/* live timer that counts up during the match - refreshes each second - only show if not published */}
+                      {/* user story 10 - live timer that counts up during the match - refreshes each second - only show if not published */}
+                      {/* reference: https://react.dev/learn/conditional-rendering - used react's conditional rendering to show or hide the match clock based on whether the match is published */}
                       {/* user story #11 - only show the match clock if the game is not published */}
                       {/* if the game is published, hide the clock so users have to view the match report to see it */}
                       {!fx.published && fx.clockRunning && (
@@ -622,9 +652,9 @@ export default function Home() {
                         </div>
                       )}
 
-                      {/* reference: https://react.dev/learn/conditional-rendering */}
-                      {/* line 624 - used react's conditional rendering to show or hide card counts based on whether the match is published */}
                       {/* card counts for home and away teams - only shows if there are any cards and not published */}
+                      {/* reference: https://react.dev/learn/conditional-rendering - used react's conditional rendering to show or hide card counts based on whether the match is published */}
+                      {/*  if the game is not published and there are any cards, I show this cards row; if the game is published or there are no cards, I hide this part of the screen */}
                       {/* user story #11 - only show card counts if the game is not published */}
                       {/* if the game is published, hide the cards so users have to view the match report to see them */}
                       {!fx.published && (fx.homeYellowCards > 0 || fx.homeRedCards > 0 || fx.awayYellowCards > 0 || fx.awayRedCards > 0) && (
@@ -643,6 +673,27 @@ export default function Home() {
                           <span>
                             Cards: Y{fx.awayYellowCards ?? 0} / R{fx.awayRedCards ?? 0}
                           </span>
+                        </div>
+                      )}
+
+                      {/* user story 10 - button to open the live timeline page for this favourite fixture */}
+                      {/* reference: https://react.dev/learn/conditional-rendering - used react's conditional rendering to show the button only when we have both competition type and id */}
+                      {compType && compId && (
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "flex-end",
+                            marginTop: 8,
+                          }}
+                        >
+                          <button
+                            className="chip"
+                            onClick={() =>
+                              nav(`/fixture/${compType}/${compId}/${fx.id}`)
+                            }
+                          >
+                            Show Live Match Updates
+                          </button>
                         </div>
                       )}
                     </div>
@@ -697,9 +748,9 @@ export default function Home() {
                         <span>{fx.awayTeam}</span>
                       </div>
 
-                      {/* reference: https://react.dev/learn/conditional-rendering */}
-                      {/* line 700 - used react's conditional rendering to show or hide card counts based on whether the match is published */}
                       {/* card count for both teams - only show if not published */}
+                      {/* reference: https://react.dev/learn/conditional-rendering - used react's conditional rendering to show or hide card counts based on whether the match is published */}
+                      {/* in simple english: if the munster game is not published, I show the yellow and red card totals; once it is published, this whole cards row is hidden */}
                       {!fx.published && (
                         <div
                           style={{
@@ -735,9 +786,8 @@ export default function Home() {
                         </span>
                       </div>
 
-                      {/* reference: https://react.dev/learn/conditional-rendering */}
-                      {/* line 734 - used react's conditional rendering to show or hide the match clock based on whether the match is published */}
-                      {/* live match clock - only show if not published */}
+                      {/* user story 10 - live match clock - only show if not published */}
+                      {/* reference: https://react.dev/learn/conditional-rendering - used react's conditional rendering to show or hide the match clock based on whether the match is published */}
                       {!fx.published && (
                         <div
                           style={{
@@ -753,9 +803,10 @@ export default function Home() {
                         </div>
                       )}
 
-                      {/* user story #11 - view report button for completed games */}
-                      {/* when a game is finished, supporters can click this to see the full match report */}
-                      {fx.status === "full time" && (
+                      {/* user story #11 - view report button for completed & published games */}
+                      {/* when a game is finished and published, supporters can click this to see the full match report */}
+                      {/* reference: https://react.dev/learn/conditional-rendering - used react's conditional rendering to show the view report button only when the game is published and finished */}
+                      {fx.published && fx.status === "full time" && (
                         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
                           <button
                             className="chip"
@@ -766,6 +817,18 @@ export default function Home() {
                         </div>
                       )}
 
+                      {/* user story 10 - supporter button to open the live timeline page for this munster championship game */}
+                      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+                        <button
+                          className="chip"
+                          onClick={() =>
+                            nav(`/fixture/championship/munster-championship/${fx.id}`)
+                          }
+                        >
+                          Show Live Match Updates
+                        </button>
+                      </div>
+
                       {/* admin button to update games */}
                       {isAdmin && (
                         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
@@ -773,7 +836,7 @@ export default function Home() {
                             className="chip"
                             onClick={() => nav("/admin")}
                           >
-                            Admin: update games
+                            Admin: Update Games
                           </button>
                         </div>
                       )}
@@ -827,9 +890,9 @@ export default function Home() {
                         <span>{fx.awayTeam}</span>
                       </div>
 
-                      {/* reference: https://react.dev/learn/conditional-rendering */}
-                      {/* line 821 - used react's conditional rendering to show or hide card counts based on whether the match is published */}
                       {/* card count for both teams - only show if not published */}
+                      {/* reference: https://react.dev/learn/conditional-rendering - used react's conditional rendering to show or hide card counts based on whether the match is published */}
+                      {/* when the sigerson game is still live (not published), I show the card totals here; when it is published, React stops rendering this cards section */}
                       {!fx.published && (
                         <div
                           style={{
@@ -865,9 +928,8 @@ export default function Home() {
                         </span>
                       </div>
 
-                      {/* reference: https://react.dev/learn/conditional-rendering */}
-                      {/* line 857 - used react's conditional rendering to show or hide the match clock based on whether the match is published */}
-                      {/* live match clock - only show if not published */}
+                      {/* user story 10 - live match clock - only show if not published */}
+                      {/* reference: https://react.dev/learn/conditional-rendering - used react's conditional rendering to show or hide the match clock based on whether the match is published */}
                       {!fx.published && (
                         <div
                           style={{
@@ -883,10 +945,10 @@ export default function Home() {
                         </div>
                       )}
 
-                      {/* view report button for completed games */}
-                      {/* user story #11 - show a button to view the full match report when the game is finished */}
+                      {/* view report button for completed & published games */}
+                      {/* user story #11 - show a button to view the full match report when the game is finished and published */}
                       {/* this button takes the user to the match report page where they can see all the details */}
-                      {fx.status === "full time" && (
+                      {fx.published && fx.status === "full time" && (
                         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
                           <button
                             className="chip"
@@ -896,6 +958,18 @@ export default function Home() {
                           </button>
                         </div>
                       )}
+
+                      {/* user story 10 - supporter live view button to open the match timeline page for this sigerson cup game */}
+                      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+                        <button
+                          className="chip"
+                          onClick={() =>
+                            nav(`/fixture/championship/sigerson-cup/${fx.id}`)
+                          }
+                        >
+                          Show Live Match Updates
+                        </button>
+                      </div>
 
                       {/* admin button to update games */}
                       {isAdmin && (

@@ -1,5 +1,5 @@
 // simple static about page for oneclub..
-// no database or state here - h
+// no database or state here - r
 
 export default function About() {
   return (

@@ -82,6 +82,18 @@ Lines 534, 559: Firebase Firestore - Update Document
 - reference: https://firebase.google.com/docs/firestore/manage-data/add-data#update-documents
 - what i did: when the admin clicks publish or unpublish, it finds the fixture document in firestore and updates just the published field to true or false. this lets admins toggle whether a match is published or not.
 
+Lines 456-663, 672-788, 794-831: ChatGPT - unified events timeline for scores, cards, and status
+- reference: https://chatgpt.com/share/698dd95f-c4bc-8004-abb2-f58a3426cc2b
+- what i did: followed this chatgpt example to save scores, cards, and status changes as events in one subcollection under each fixture. also used it to confirm scores in a popup with a frozen match clock time, log score events with who scored and the score at that moment, and remove the latest matching score or card event when doing corrections so the supporter timeline stays accurate.
+
+User story 18 - store and show who verified the result (lines 863-871, 898-904, 1574-1608)
+- reference: https://stackoverflow.com/questions/60056185/convert-firestore-timestamp-to-date-into-different-format
+- what i did: when the admin publishes a match, we store verifiedBy (admin name) and verifiedAt (server timestamp) on the fixture. when unpublishing we clear them. when a match is already published, we show "Verified by: [name]" and the date/time below it. used the same pattern as MatchReporter (toDate() then format); here we use toLocaleString for date and time in one string.
+
+User story 14 - admin enter lineups so reporters and supporters can see who is playing (lines 65-71 state, 225-245 create, 371-381 load when selecting, 1002-1035 save lineups, 1174-1210 create ui, 1510-1563 edit ui, 1758-1793 scorer dropdown)
+- reference: https://chatgpt.com/share/698f5263-92fc-8004-bd06-d94790f01d1c
+- what i did: I took code from this chat and used it for my project (made changes to suit also). Used this chat to set up the lineup feature step by step. started with react state for create and edit, then parsed text to arrays when saving to firestore, loaded lineups back into textareas when selecting a fixture, added save lineups for editing, wired the scorer dropdown to the lineup arrays, and confirmed how reporters and supporters display the lineups. kept lineups as arrays so no parsing needed when displaying.
+
 ## app/src/routes/LeaguePage.jsx
 
 Lines 1-5: Firebase Firestore Documentation
@@ -207,3 +219,17 @@ Lines 109-120: chatgpt - match report text building
 Lines 127-130: chatgpt - winner logic and report building
 - reference: https://chatgpt.com/share/698619f9-6afc-8004-896d-8903ffe7b76a
 - what i did: used to grab code to assist me with determining the winner and building the match report text string. got help with calculating totals, winner logic, and structuring the report.
+
+User story 18 - verification line in match report (Lines 296-324)
+- reference: https://stackoverflow.com/questions/60056185/convert-firestore-timestamp-to-date-into-different-format
+- what i did: took the approach from that post (toDate() then toLocaleDateString/toLocaleTimeString) and adapted it for this project to format the verification timestamp. when an admin has verified a match, the report appends a line "Result verified by: [name] on [date] at [time]" so the journalist can cite who verified the result.
+
+## app/src/routes/FixtureTimeline.jsx
+
+Lines 172-179: chatgpt - building firestore paths with array spread and ordering
+- reference: https://chatgpt.com/share/698cc3fb-e8c4-8004-9d27-b803ae0c4a2d
+- what i did: took code from this chat and implemented it using my project info. got help with building firestore collection paths as arrays and spreading them into the collection() function using the spread operator. also confirmed that using orderBy("clockSeconds", "asc") is the correct way to sort events by match time so the timeline shows events in chronological order. adapted the pattern to work with my competition type and competition id from url parameters.
+
+Lines 32-36, 315-430: Material UI Timeline API - timeline component implementation
+- reference: https://mui.com/material-ui/react-timeline/
+- what i did: installed @mui/material, @emotion/react, @emotion/styled, and @mui/lab packages. imported Timeline, TimelineItem, TimelineSeparator, TimelineConnector, TimelineContent, and TimelineDot components from @mui/lab. replaced the custom timeline structure with material ui timeline components. used TimelineDot color prop to show different colored dots for different event types: "success" (green) for goals, "primary" (blue) for points, "error" (red) for red cards, custom yellow (#f59e0b) via sx prop for yellow cards, and "secondary" (purple) for status changes. the timeline now uses material ui's polished components with proper spacing, connectors between events, and consistent styling.
