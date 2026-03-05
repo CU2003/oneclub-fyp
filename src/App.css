@@ -96,6 +96,9 @@ body{
   width:100vw;                  /* fill viewport */
   margin:0;
   padding: var(--gutter);       /* minimal side padding (set --gutter:0 for none) */
+  display:flex;                 /* stack main content and footer vertically */
+  flex-direction:column;
+  min-height:100vh;             /* stretch to full viewport height so footer sits at bottom */
 }
 
 /* ===== 3-column layout (FotMob style) ===== */
@@ -104,6 +107,38 @@ body{
   display:grid;
   gap:16px;
   grid-template-columns: 300px minmax(0,1fr) 360px;
+  flex:1;                       /* let content grow and push footer down */
+}
+
+/* ===== FOOTER: full-width bar at bottom, styled to match navbar but lighter ===== */
+.footer{
+  width:100vw;
+  margin:0;
+  margin-top:24px;
+  padding:18px 24px;
+  background:linear-gradient(90deg, #0f172a, #111827); /* subtle dark gradient */
+  border-top:1px solid var(--bar-line);
+  color:#e5e7eb;
+  font-size:0.9rem;
+}
+
+.footer-inner{
+  max-width:980px;
+  margin:0 auto;
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+}
+
+.footer-text{
+  opacity:0.85;
+}
+
+.footer a{
+  color:#e5e7eb;
+  text-decoration:underline;
 }
 @media (min-width:1400px){
   .layout{ grid-template-columns: 320px minmax(0,1fr) 380px; }
@@ -275,4 +310,104 @@ body{
 }
 .settings-menu .menu li a:hover {
   background: rgba(0,0,0,.04);
+}
+
+/* ===== Sidebar (replaces settings dropdown) ===== */
+.sidebar-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 10px;
+}
+
+.sidebar-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.4);
+  z-index: 100;
+  animation: fadeIn 0.2s ease;
+}
+
+.app-sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 280px;
+  max-width: 85vw;
+  height: 100vh;
+  background: var(--panel);
+  border-right: 1px solid var(--panel-line);
+  box-shadow: 4px 0 24px rgba(0,0,0,.15);
+  z-index: 101;
+  display: flex;
+  flex-direction: column;
+  animation: slideInLeft 0.25s ease;
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--panel-line);
+  background: var(--bar);
+  color: #e8e9ee;
+}
+
+.sidebar-title {
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.sidebar-close {
+  background: transparent;
+  border: none;
+  color: #e8e9ee;
+  padding: 6px;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.sidebar-close:hover {
+  background: rgba(255,255,255,.1);
+}
+
+.sidebar-menu {
+  list-style: none;
+  margin: 0;
+  padding: 12px 0;
+  overflow: auto;
+}
+
+.sidebar-menu li a {
+  display: block;
+  padding: 12px 16px;
+  text-decoration: none;
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.sidebar-menu li a:hover {
+  background: var(--chip);
+}
+
+.sidebar-user {
+  padding: 12px 16px;
+  border-top: 1px solid var(--panel-line);
+  margin-top: 8px;
+}
+
+.sidebar-user-text {
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideInLeft {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
 }

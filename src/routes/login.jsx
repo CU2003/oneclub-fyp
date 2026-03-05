@@ -8,7 +8,7 @@
 import React, { useState } from "react";
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
 import { auth } from "../firebase";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 
 // user story 6
 export default function Login() {
@@ -107,6 +107,10 @@ export default function Login() {
       >
         {isSignUp ? "Already have an account? Log in" : "No account? Sign up"}
       </button>
+
+      <p style={{ marginTop: "1rem", fontSize: "0.9rem", textAlign: "center" }}>
+        <Link to="/signup/reporter">Sign up as a reporter</Link>
+      </p>
     </div>
   );
 }

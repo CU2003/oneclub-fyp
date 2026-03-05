@@ -6,6 +6,7 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
+import { getStorage } from "firebase/storage";
 
 // used to start the project
 // real values in .env.local
@@ -22,4 +23,5 @@ const app = initializeApp({ // creates the single firebase app instance OneClub 
 // exported into other files so rest of the web app use
 export const auth = getAuth(app); // to be used for further iterations - e.g. verification backlog - ITERATION 2
 export const db = getFirestore(app); // storage of fixtures, tables etc. PLANNED ITERATION, SOON TO BE LIVE EVENTS!!!!
+export const storage = getStorage(app); // firebase storage - used for uploading images (e.g. report cover photos, sponsor logos)
 

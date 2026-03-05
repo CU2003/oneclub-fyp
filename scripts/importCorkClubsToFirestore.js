@@ -50,7 +50,12 @@ const db = admin.firestore(); // Firestore database reference
 
 const dataPath = path.join(__dirname, "data", "cork-clubs.json");
 const rawData = fs.readFileSync(dataPath, "utf8");
-const clubsByDivision = JSON.parse(rawData);
+
+// support both the original flat format ({"Carbery": [...]}) and the newer wrapped
+// format that includes metadata and a "divisions" property
+// e.g. { source, county, lastUpdated, divisions: { Carbery: [...] } }
+const parsed = JSON.parse(rawData);
+const clubsByDivision = parsed.divisions || parsed;
 
 
 // Firestore document IDs should be lowercase,

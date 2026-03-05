@@ -1,16 +1,36 @@
 {
   "source": "Cork GAA Official Website",
   "county": "Cork",
-  "lastUpdated": "2026-01-01",
+  "lastUpdated": "2026-03-03",
   "divisions": {
     "Carbery": [
-  { "name": "Argideen Rangers", "clubId": "argideen-rangers" },
-  { "name": "Ballinascarthy", "clubId": "ballinascarthy" },
-  { "name": "Bandon", "clubId": "bandon" },
-  { "name": "Bantry Blues", "clubId": "bantry-blues" },
-  { "name": "Barryroe", "clubId": "barryroe" },
-  { "name": "Carbery Rangers", "clubId": "carbery-rangers" },
-  { "name": "Kilbrittain", "clubId": "kilbrittain" }
-]
+      { "name": "Argideen Rangers",      "clubId": "argideen-rangers" },
+      { "name": "Ballinascarthy",        "clubId": "ballinascarthy" },
+      { "name": "Bandon",                "clubId": "bandon" },
+      { "name": "Bantry Blues",          "clubId": "bantry-blues" },
+      { "name": "Barryroe",              "clubId": "barryroe" },
+      { "name": "Carbery Rangers",       "clubId": "carbery-rangers" },
+      { "name": "Castlehaven",           "clubId": "castlehaven" },
+      { "name": "Clann na nGael",        "clubId": "clann-na-ngael" },
+      { "name": "Clonakilty",            "clubId": "clonakilty" },
+      { "name": "Diarmuid Ó Mathúnas",   "clubId": "diarmuid-o-mathunas" },
+      { "name": "Dohenys",               "clubId": "dohenys" },
+      { "name": "Gabriel Rangers",       "clubId": "gabriel-rangers" },
+      { "name": "Goleen",                "clubId": "goleen" },
+      { "name": "Ilen Rovers",           "clubId": "ilen-rovers" },
+      { "name": "Kilbrittain",           "clubId": "kilbrittain" },
+      { "name": "Kilmacabea",            "clubId": "kilmacabea" },
+      { "name": "Kilmeen and Kilbree",   "clubId": "kilmeen-and-kilbree" },
+      { "name": "Muintir Bháire",        "clubId": "muintir-bhaire" },
+      { "name": "Newcestown",            "clubId": "newcestown" },
+      { "name": "O'Donovan Rossa",       "clubId": "odonovan-rossa" },
+      { "name": "Randal Óg",             "clubId": "randal-og" },
+      { "name": "St Colum's",            "clubId": "st-colums" },
+      { "name": "St James",              "clubId": "st-james" },
+      { "name": "St Mary's",             "clubId": "st-marys" },
+      { "name": "St Oliver Plunketts",   "clubId": "st-oliver-plunketts" },
+      { "name": "Tadhg MacCarthaigh",    "clubId": "tadhg-maccarthaigh" }
+    ]
   }
 }
+

@@ -26,6 +26,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { db } from "../firebase";
+import { useAuth } from "../AuthContext";
 import {
   doc,
   getDoc,
@@ -38,9 +39,10 @@ import {
 export default function MatchReporter() {
   // gets the competition type, competition id, and fixture id from the url
   const { competitionType, competitionId, fixtureId } = useParams();
-  
-  // lets us navigate back to the home page
   const navigate = useNavigate();
+  const { userDoc } = useAuth();
+  // admin sees return to admin console; supporters and reporters go back to the page they came from
+  const isAdmin = userDoc?.role === "admin";
   
   // stores the match data, loading status, and any errors
   const [fixture, setFixture] = useState(null);
@@ -83,8 +85,8 @@ export default function MatchReporter() {
           // user story 10 - loads the events for this game so the report can show the live timeine
           // this pulls the same score, card and status events that the supporter timeline page uses
           const eventsCol = collection(db, ...collectionPath, fixtureId, "events");
-          // order by clockseconds so the events are in match time order and dont jump around
-          const q = query(eventsCol, orderBy("clockSeconds", "asc"));
+          // order by createdAt so the events follow the real order they were logged, even if the clock is reset at half time
+          const q = query(eventsCol, orderBy("createdAt", "asc"));
           const eventsSnap = await getDocs(q);
           // turn the event documents into a plain list we can pass into the report builder
           const list = eventsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -210,11 +212,12 @@ export default function MatchReporter() {
     report += `Match Status: ${fx.status || "Completed"}\n`;
     
     // user story 14 - reference: https://chatgpt.com/share/698f5263-92fc-8004-bd06-d94790f01d1c (lines 212-230)
-    // I took code from this chat and used it for my project (made changes to suit also).
-    // Lineups displayed in report from fixture doc. Get the list of players for each team from the fixture (the admin entered these in the match console).
+    // i took code from this chat and used it for my project (made changes to suit also).
+    // lineups displayed in report from fixture doc. get the list of players for each team from the fixture (the admin entered these in the match console).
+    // gaa lineup pitch layout reference: https://chatgpt.com/share/69a18c1b-0f08-8004-a65e-99e68c025dfa - used the same jersey order and positions as the pitch layout so the report numbering matches the pitch view.
     const homeLineup = fx.homeLineup;
     const awayLineup = fx.awayLineup;
-    // If the home team has a lineup, add a heading and then each player on a new line with a number (1. 2. 3. etc).
+    // if the home team has a lineup, add a heading and then each player on a new line with a number (1. 2. 3. etc).
     if (Array.isArray(homeLineup) && homeLineup.length > 0) {
       report += `\n`;
       report += `${fx.homeTeam} Lineup:\n`;
@@ -276,7 +279,14 @@ export default function MatchReporter() {
               ? fx.awayTeam
               : ""
             : "";
-          mainText = teamLabel ? `${cardWord} for ${teamLabel}` : cardWord;
+          // if we know the player, include their name in the main text
+          if (ev.playerName && teamLabel) {
+            mainText = `${cardWord} for ${ev.playerName} (${teamLabel})`;
+          } else if (ev.playerName) {
+            mainText = `${cardWord} for ${ev.playerName}`;
+          } else {
+            mainText = teamLabel ? `${cardWord} for ${teamLabel}` : cardWord;
+          }
           detailText = `Cards: ${fx.homeTeam} Y${fx.homeYellowCards ?? 0}/R${
             fx.homeRedCards ?? 0
           } • ${fx.awayTeam} Y${fx.awayYellowCards ?? 0}/R${fx.awayRedCards ?? 0}`;
@@ -345,7 +355,9 @@ export default function MatchReporter() {
     return (
       <div style={{ maxWidth: 800, margin: "2rem auto", padding: "1rem" }}>
         <p style={{ color: "red" }}>{error || "Fixture not found"}</p>
-        <button onClick={() => navigate("/")}>Back to Home</button>
+        <button onClick={() => (isAdmin ? navigate("/admin") : navigate(-1))}>
+          {isAdmin ? "Return to Admin Match Console" : "← Back"}
+        </button>
       </div>
     );
   }
@@ -388,11 +400,15 @@ export default function MatchReporter() {
   }
 
   // displays the match report page with header, summary box, and export option
+  // admin: back button returns to admin match console; supporters and reporters: go back to previous page
   return (
     <div style={{ maxWidth: 800, margin: "2rem auto", padding: "1rem" }}>
       <header style={{ marginBottom: "2rem" }}>
-        <button onClick={() => navigate("/")} style={{ marginBottom: "1rem" }}>
-          ← Back to Home
+        <button
+          onClick={() => (isAdmin ? navigate("/admin") : navigate(-1))}
+          style={{ marginBottom: "1rem" }}
+        >
+          {isAdmin ? "← Return to Admin Match Console" : "← Back"}
         </button>
         <div
           style={{

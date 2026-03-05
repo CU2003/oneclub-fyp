@@ -13,7 +13,7 @@
 // loads club names from favourite club IDs so we can match them against team names and show upcoming games for clubs the user has favourited.
 
 
-import { useNavigate } from "react-router-dom"; // allows us to move between pages
+import { useNavigate, Link } from "react-router-dom"; // allows us to move between pages
 import { useEffect, useState } from "react"; // react hooks for side affects and storing state
 import { db } from "../firebase"; // connection for firestore
 import { // firestore functions for reading live data
@@ -27,11 +27,7 @@ import { // firestore functions for reading live data
   getDoc, // used to read the club doc
 } from "firebase/firestore";
 import { useAuth } from "../AuthContext.jsx";  // gives current logged in user
-
-// images for news section - to be changed when reporter worked on - further iteration
-import kilbrittainImg from "../assets/Kilbrittain.png";
-import barryroeImg from "../assets/Barryroe.png";
-
+import AdSidebar from "./AdSidebar.jsx"; // left sidebar ads/sponsors from firestore (selectable via advertisements collection)
 
 export default function Home() {
   const nav = useNavigate(); // nav function to change page
@@ -43,10 +39,10 @@ export default function Home() {
   const isAdmin = userDoc?.role === "admin";
 
   // league fixtures
-  const [pshNextFixture, setPshNextFixture] = useState(null); // next premier senior hurling fixture
-  const [psfNextFixture, setPsfNextFixture] = useState(null); // next premier senior football fixture
+  const [carberyJuniorAFixtures, setCarberyJuniorAFixtures] = useState([]); // all carbery junior a league fixtures (same style as munster/sigerson)
+  const [redfmDiv6Fixtures, setRedfmDiv6Fixtures] = useState([]); // all redfm division 6 league fixtures
 
-  // all Munster fixtures for featured teams (Kilbrittain, Ballygunner)
+  // all Munster fixtures for featured team (Kilbrittain)
   const [munsterFixtures, setMunsterFixtures] = useState([]);
   // this is a box that stores all the sigerson cup games
   const [sigersonCupFixtures, setSigersonCupFixtures] = useState([]);
@@ -61,8 +57,11 @@ export default function Home() {
   // this updates every second to keep the match clock displaying the current time
   const [now, setNow] = useState(Date.now());
 
-  // only show munster fixtures that have one of these teams
-  const FEATURED_MUNSTER_TEAMS = ["Kilbrittain", "Ballygunner"];
+  // iteration 6 - published reporter news (visible on home); list of reports to show in the right sidebar
+  const [publishedNews, setPublishedNews] = useState([]);
+
+  // only show munster fixtures for this featured team
+  const FEATURED_MUNSTER_TEAMS = ["Kilbrittain"];
 
   // user story 10 - tick now every second so the UI clock updates
   // reference: https://chatgpt.com/share/69209f75-a680-8004-ba40-c34a911b6e4f 
@@ -74,32 +73,28 @@ export default function Home() {
     return () => clearInterval(id);
   }, []);
 
-  // loading the next premier senior hurling fixture
+  // load all carbery junior a league fixtures (same pattern as sigerson cup / munster)
   useEffect(() => {
-    const nowDate = new Date();
     const q = query(
-      collection(db, "Leagues", "premier-senior-hurling", "fixtures"),
-      where("date", ">=", nowDate), // only future fixtures
-      orderBy("date", "asc"),
-      limit(1)
+      collection(db, "Leagues", "west-cork-junior-a", "fixtures"),
+      orderBy("date", "asc")
     );
-    const unsub = onSnapshot(q, (snap) => { // watching for updates in real-time
-      setPshNextFixture(snap.docs[0]?.data() ?? null);
+    const unsub = onSnapshot(q, (snap) => {
+      const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      setCarberyJuniorAFixtures(all);
     });
     return () => unsub();
   }, []);
 
-  // fetching the next premier senior football fixture
+  // load all redfm division 6 league fixtures (same pattern as other competitions)
   useEffect(() => {
-    const nowDate = new Date();
     const q = query(
-      collection(db, "Leagues", "premier-senior-football", "fixtures"),
-      where("date", ">=", nowDate),
-      orderBy("date", "asc"),
-      limit(1)
+      collection(db, "Leagues", "redfm-division-6", "fixtures"),
+      orderBy("date", "asc")
     );
-    const unsub = onSnapshot(q, (snap) => { // receiving live updates from database
-      setPsfNextFixture(snap.docs[0]?.data() ?? null);
+    const unsub = onSnapshot(q, (snap) => {
+      const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      setRedfmDiv6Fixtures(all);
     });
     return () => unsub();
   }, []);
@@ -114,7 +109,7 @@ export default function Home() {
     const unsub = onSnapshot(q, (snap) => {
       const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-      // keeping only games where kilbrittain or ballygunner are playing
+      // keeping only games where Kilbrittain are playing
       const filtered = all.filter((fx) =>
         FEATURED_MUNSTER_TEAMS.includes(fx.homeTeam) ||
         FEATURED_MUNSTER_TEAMS.includes(fx.awayTeam)
@@ -150,8 +145,10 @@ export default function Home() {
     return () => unsub();
   }, []);
 
+  // reference: https://chatgpt.com/share/698654d0-163c-8004-8ed7-17dbebaba6ac
+  // what i did: used this chatgpt example to help with flexible name matching for favourites and querying multiple firestore collections, then adapted it for my club ids, competitions, and combined fixtures list
   // finding upcoming games for clubs the user likes
-  // searches through Munster Championship, Premier Senior Hurling, and Premier Senior Football
+  // searches through Munster Championship and Sigerson Cup (and Carbery Junior A is separate)
   // only shows games where one of their favourite clubs is playing
   // updates automatically whenever scores change in the database
   useEffect(() => {
@@ -256,78 +253,6 @@ export default function Home() {
         });
         unsubs.push(munsterUnsub);
 
-        // checking Premier Senior Hurling fixtures
-        const pshQ = query(
-          collection(db, "Leagues", "premier-senior-hurling", "fixtures"),
-          where("date", ">=", nowDate),
-          orderBy("date", "asc")
-        );
-        const pshUnsub = onSnapshot(pshQ, (snap) => {
-          const pshFixtures = snap.docs
-            .map((d) => ({ id: d.id, ...d.data() }))
-            .filter((fx) => {
-              const homeLower = (fx.homeTeam || "").toLowerCase().trim();
-              const awayLower = (fx.awayTeam || "").toLowerCase().trim();
-              // match by exact name or case-insensitive partial match
-              return clubNames.includes(fx.homeTeam) || clubNames.includes(fx.awayTeam) ||
-                     clubNameLower.some(name => homeLower.includes(name) || awayLower.includes(name));
-            });
-          
-          // adding premier senior hurling fixtures to the mix
-          setFavouriteFixtures((prev) => {
-            const combined = [...prev.filter((f) => !f.source || f.source !== "psh"), ...pshFixtures.map((f) => ({ ...f, source: "psh" }))];
-            const unique = combined.filter((f, idx, arr) => 
-              arr.findIndex((other) => other.id === f.id) === idx
-            );
-            return unique
-              .sort((a, b) => {
-                const dateA = a.date?.toDate ? a.date.toDate().getTime() : 0;
-                const dateB = b.date?.toDate ? b.date.toDate().getTime() : 0;
-                return dateA - dateB;
-              })
-              .slice(0, 15);
-          });
-        });
-        unsubs.push(pshUnsub);
-
-        // scanning Premier Senior Football fixtures
-        const psfQ = query(
-          collection(db, "Leagues", "premier-senior-football", "fixtures"),
-          where("date", ">=", nowDate),
-          orderBy("date", "asc")
-        );
-        const psfUnsub = onSnapshot(psfQ, (snap) => {
-          const psfFixtures = snap.docs
-            .map((d) => ({ id: d.id, ...d.data() }))
-            .filter((fx) => {
-              const homeLower = (fx.homeTeam || "").toLowerCase().trim();
-              const awayLower = (fx.awayTeam || "").toLowerCase().trim();
-              // match by exact name or case-insensitive partial match
-              return clubNames.includes(fx.homeTeam) || clubNames.includes(fx.awayTeam) ||
-                     clubNameLower.some(name => homeLower.includes(name) || awayLower.includes(name));
-            });
-          
-          // mixing in premier senior football fixtures
-          setFavouriteFixtures((prev) => {
-            const combined = [...prev.filter((f) => !f.source || f.source !== "psf"), ...psfFixtures.map((f) => ({ ...f, source: "psf" }))];
-            const unique = combined.filter((f, idx, arr) => 
-              arr.findIndex((other) => other.id === f.id) === idx
-            );
-            return unique
-              .sort((a, b) => {
-                const dateA = a.date?.toDate ? a.date.toDate().getTime() : 0;
-                const dateB = b.date?.toDate ? b.date.toDate().getTime() : 0;
-                return dateA - dateB;
-              })
-              .slice(0, 15);
-          });
-        });
-        unsubs.push(psfUnsub);
-
-        // reference: https://chatgpt.com/share/698654d0-163c-8004-8ed7-17dbebaba6ac
-        // lines 324-373 - got help with querying multiple firestore collections and matching fixture team names to favourite club names
-        // also got help with combining fixtures from different collections and removing duplicates
-        // Took code directly from chat gpt also
         // checking sigerson cup fixtures
         const sigersonQ = query(
           collection(db, "Championship", "sigerson-cup", "fixtures"),
@@ -379,6 +304,93 @@ export default function Home() {
         });
         unsubs.push(sigersonUnsub);
 
+        // Carbery Junior A League (west-cork-junior-a) - so Kilbrittain etc. show in favourites
+        // favourites section only shows upcoming games, same as munster and sigerson
+        const wcJuniorAQ = query(
+          collection(db, "Leagues", "west-cork-junior-a", "fixtures"),
+          where("date", ">=", nowDate),
+          orderBy("date", "asc")
+        );
+        const wcJuniorAUnsub = onSnapshot(wcJuniorAQ, (snap) => {
+          const wcFixtures = snap.docs
+            .map((d) => ({ id: d.id, ...d.data() }))
+            .filter((fx) => {
+              const homeLower = (fx.homeTeam || "").toLowerCase().trim();
+              const awayLower = (fx.awayTeam || "").toLowerCase().trim();
+              return (
+                clubNames.includes(fx.homeTeam) ||
+                clubNames.includes(fx.awayTeam) ||
+                clubNameLower.some(
+                  (name) =>
+                    homeLower.includes(name) || awayLower.includes(name)
+                )
+              );
+            });
+          setFavouriteFixtures((prev) => {
+            const combined = [
+              ...prev.filter(
+                (f) => !f.source || f.source !== "wc-junior-a"
+              ),
+              ...wcFixtures.map((f) => ({ ...f, source: "wc-junior-a" })),
+            ];
+            const unique = combined.filter(
+              (f, idx, arr) =>
+                arr.findIndex((other) => other.id === f.id) === idx
+            );
+            return unique
+              .sort((a, b) => {
+                const dateA = a.date?.toDate ? a.date.toDate().getTime() : 0;
+                const dateB = b.date?.toDate ? b.date.toDate().getTime() : 0;
+                return dateA - dateB;
+              })
+              .slice(0, 15);
+          });
+        });
+        unsubs.push(wcJuniorAUnsub);
+
+        // redfm division 6 league - favourites section only shows upcoming games, same as others
+        const redfmQ = query(
+          collection(db, "Leagues", "redfm-division-6", "fixtures"),
+          where("date", ">=", nowDate),
+          orderBy("date", "asc")
+        );
+        const redfmUnsub = onSnapshot(redfmQ, (snap) => {
+          const redfmFixtures = snap.docs
+            .map((d) => ({ id: d.id, ...d.data() }))
+            .filter((fx) => {
+              const homeLower = (fx.homeTeam || "").toLowerCase().trim();
+              const awayLower = (fx.awayTeam || "").toLowerCase().trim();
+              return (
+                clubNames.includes(fx.homeTeam) ||
+                clubNames.includes(fx.awayTeam) ||
+                clubNameLower.some(
+                  (name) =>
+                    homeLower.includes(name) || awayLower.includes(name)
+                )
+              );
+            });
+          setFavouriteFixtures((prev) => {
+            const combined = [
+              ...prev.filter(
+                (f) => !f.source || f.source !== "redfm-div6"
+              ),
+              ...redfmFixtures.map((f) => ({ ...f, source: "redfm-div6" })),
+            ];
+            const unique = combined.filter(
+              (f, idx, arr) =>
+                arr.findIndex((other) => other.id === f.id) === idx
+            );
+            return unique
+              .sort((a, b) => {
+                const dateA = a.date?.toDate ? a.date.toDate().getTime() : 0;
+                const dateB = b.date?.toDate ? b.date.toDate().getTime() : 0;
+                return dateA - dateB;
+              })
+              .slice(0, 15);
+          });
+        });
+        unsubs.push(redfmUnsub);
+
         // cleaning up - stop listening to database changes when done
         // important to unsubscribe so we don't keep listening after logout or when favourites change
         return () => {
@@ -402,8 +414,23 @@ export default function Home() {
     };
   }, [currentUser, favouriteClubIds.join("|")]);
 
+  // iteration 6 - load published reporter reports from firestore (visibleOnHome true),
+  // listen for updates so the list stays in sync.
+  // reports stay visible on the home page until the reporter deletes them in the reporter dashboard.
+  // note: not ordering by publishedAt here so we avoid needing a composite firestore index; simple visibility is enough.
+  useEffect(() => {
+    const q = query(
+      collection(db, "news"),
+      where("visibleOnHome", "==", true)
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      setPublishedNews(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    });
+    return () => unsub();
+  }, []);
+
   // converting firestore timestamps into readable dates
-  // reference: https://www.w3schools.com/jsref/jsref_tolocalestring.asp Lines 107-129 ~
+  // reference: https://www.w3schools.com/jsref/jsref_tolocalestring.asp lines 107-129 ~
   const fmtDate = (ts) => {
     if (!ts) return "";
     const d = ts.toDate ? ts.toDate() : new Date(ts);
@@ -416,6 +443,22 @@ export default function Home() {
     });
   };
 
+
+  // iteration 6 - format timestamp as relative time for the news sidebar
+  // reference: https://stackoverflow.com/questions/3177836/how-to-format-time-since-xxx-e-g-4-minutes-ago-similar-to-stack-exchange-sites
+  // what i did: used the idea of comparing seconds since a date and returning human readable strings like just now or minutes ago,
+  // then adapted it for firestore timestamps and short labels like m ago, h ago, d ago, and a short date fallback
+  // took code from reference
+  const relativeTime = (ts) => {
+    if (!ts) return "";
+    const d = ts.toDate ? ts.toDate() : new Date(ts);
+    const secs = Math.floor((Date.now() - d.getTime()) / 1000);
+    if (secs < 60) return "just now";
+    if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
+    if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
+    if (secs < 2592000) return `${Math.floor(secs / 86400)}d ago`;
+    return d.toLocaleDateString([], { month: "short", day: "numeric" });
+  };
   // user story 10 - format the seconds like mm:ss for clocks
   // takes a number of seconds and converts it to minutes:seconds format like 05:23
   // this function is also used in fixturetimeline.jsx
@@ -449,70 +492,33 @@ export default function Home() {
     return fmtClock(secs);
   };
 
+  // completed games (full time or published) are treated as past games
+  // copied the same idea from earlier competitions: keep the home page focused on live and upcoming fixtures,
+  // and use the club page results section to show past games and full time scores. this helper checks a fixture's status and published flag.
+  const isCompleted = (fx) => {
+    const raw = (fx.status || "").trim();
+    const status = raw.toLowerCase().replace(/\s+/g, " "); // normalize spaces (e.g. "full  time", non-breaking space)
+    const fullTimeVariants = ["full time", "fulltime", "ft", "full-time"];
+    const isFullTime = fullTimeVariants.includes(status);
+    const isPublished = fx.published === true || fx.published === "true";
+    return isFullTime || isPublished;
+  };
+  // only show upcoming or live games on the home page;
+  // completed or published games are hidden here and shown on the club page instead.
+  const munsterShown = (munsterFixtures || []).filter((fx) => !isCompleted(fx));
+  const sigersonShown = sigersonCupFixtures.filter((fx) => !isCompleted(fx));
+  const carberyShown = (carberyJuniorAFixtures || []).filter((fx) => !isCompleted(fx));
+  const redfmShown = (redfmDiv6Fixtures || []).filter((fx) => !isCompleted(fx));
+  const favouritesShown = favouriteFixtures.filter((fx) => !isCompleted(fx));
+
   // if no fixtures return a message
   if (!munsterFixtures) return <p className="muted">No fixtures loaded...</p>;
 
   return (
     <div className="layout">
-      {/* left sidebar */}
-      <aside className="left" aria-label="League selectors">
-        <div className="card">
-          <details className="select select-dropdown" open> {/* hurling league drop down */}
-            <summary aria-haspopup="listbox" aria-expanded="true">
-              Hurling leagues ▾
-            </summary>
-            <ul className="menu" role="listbox" aria-label="Hurling leagues">
-              <li
-                role="option"
-                tabIndex={0}
-                className="menu-item--active"
-                onClick={() => nav("/league/premier-senior-hurling")}
-              >
-                Premier Senior Hurling
-              </li>
-              <li className="menu-item--disabled" aria-disabled="true">
-                Senior A Hurling
-              </li>
-              <li className="menu-item--disabled" aria-disabled="true">
-                Premier Intermediate Hurling
-              </li>
-              <li className="menu-item--disabled" aria-disabled="true">
-                Intermediate A Hurling
-              </li>
-              <li className="menu-item--disabled" aria-disabled="true">
-                Premier Junior Hurling
-              </li>
-            </ul>
-          </details>
-
-          <details className="select select-dropdown"> {/* football league drop down */}
-            <summary aria-haspopup="listbox" aria-expanded="false">
-              Football leagues ▾
-            </summary>
-            <ul className="menu" role="listbox" aria-label="Football leagues">
-              <li
-                role="option"
-                tabIndex={0}
-                className="menu-item--active"
-                onClick={() => nav("/league/premier-senior-football")}
-              >
-                Premier Senior Football
-              </li>
-              <li className="menu-item--disabled" aria-disabled="true">
-                Senior A Football
-              </li>
-              <li className="menu-item--disabled" aria-disabled="true">
-                Premier Intermediate Football
-              </li>
-              <li className="menu-item--disabled" aria-disabled="true">
-                Intermediate A Football
-              </li>
-              <li className="menu-item--disabled" aria-disabled="true">
-                Premier Junior Football
-              </li>
-            </ul>
-          </details>
-        </div>
+      {/* left sidebar - shows selected ads/sponsors from firestore "advertisements" collection */}
+      <aside className="left" aria-label="Sponsors">
+        <AdSidebar position="home-left" />
       </aside>
 
       {/* centre */}
@@ -532,25 +538,20 @@ export default function Home() {
               </p>
             ) : favLoading ? (
               <p className="muted">Loading your upcoming fixtures…</p>
-            ) : favouriteFixtures.length === 0 ? (
+            ) : favouritesShown.length === 0 ? (
               <p className="muted">
                 No upcoming fixtures found for your favourites yet.
               </p>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {/* rendering each game with team names, score, what competition it's in, when it's on, live timer, and card counts */}
-                {favouriteFixtures.map((fx) => {
+                {favouritesShown.map((fx) => {
                   const homeGoals = fx.homeGoals ?? 0;
                   const homePoints = fx.homePoints ?? 0;
                   const awayGoals = fx.awayGoals ?? 0;
                   const awayPoints = fx.awayPoints ?? 0;
-                  const hasScore =
-                    homeGoals > 0 ||
-                    homePoints > 0 ||
-                    awayGoals > 0 ||
-                    awayPoints > 0;
 
-                  // user story 10 - reads where the fixture comes from and sets the right competition type and id
+                  // reads where the fixture comes from (for report/timeline links) and sets the right competition type and id
                   // this maps the fixture source to the correct competition type and id
                   // so the view live timeline button can open the correct live timeline page for that game
                   let compType = null;
@@ -561,12 +562,12 @@ export default function Home() {
                   } else if (fx.source === "sigerson") {
                     compType = "championship";
                     compId = "sigerson-cup";
-                  } else if (fx.source === "psh") {
+                  } else if (fx.source === "wc-junior-a") {
                     compType = "league";
-                    compId = "premier-senior-hurling";
-                  } else if (fx.source === "psf") {
+                    compId = "west-cork-junior-a";
+                  } else if (fx.source === "redfm-div6") {
                     compType = "league";
-                    compId = "premier-senior-football";
+                    compId = "redfm-division-6";
                   }
 
                   return (
@@ -578,7 +579,7 @@ export default function Home() {
                         padding: "10px 12px",
                       }}
                     >
-                      {/* team names and scoreline in goals:points format */}
+                      {/* top row - home team, combined score, away team (same as Munster/Sigerson/Carbery) */}
                       <div
                         style={{
                           display: "flex",
@@ -588,83 +589,22 @@ export default function Home() {
                         }}
                       >
                         <span>{fx.homeTeam}</span>
-                        {hasScore ? (
-                          <span>
-                            {homeGoals}:{homePoints} – {awayGoals}:{awayPoints}
-                          </span>
-                        ) : (
-                          <span>vs</span>
-                        )}
+                        <span>
+                          {homeGoals}:{homePoints} – {awayGoals}:{awayPoints}
+                        </span>
                         <span>{fx.awayTeam}</span>
                       </div>
 
-                      {/* displaying what league or championship this match belongs to */}
-                      {fx.source && (
-                        <div
-                          style={{
-                            fontSize: 11,
-                            opacity: 0.7,
-                            marginBottom: 4,
-                            textTransform: "uppercase",
-                            fontWeight: 600,
-                          }}
-                        >
-                          {fx.source === "munster" && "Munster Championship"}
-                          {fx.source === "psh" && "Premier Senior Hurling"}
-                          {fx.source === "psf" && "Premier Senior Football"}
-                        </div>
-                      )}
-
-                      {/* match date/time and what stage the game is at */}
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          fontSize: 12,
-                          opacity: 0.85,
-                          marginBottom: fx.clockRunning ? 4 : 0,
-                        }}
-                      >
-                        <span>{fx.date ? fmtDate(fx.date) : ""}</span>
-                        <span style={{ textTransform: "capitalize" }}>
-                          {fx.status || "Upcoming"}
-                        </span>
-                      </div>
-
-                      {/* user story 10 - live timer that counts up during the match - refreshes each second - only show if not published */}
-                      {/* reference: https://react.dev/learn/conditional-rendering - used react's conditional rendering to show or hide the match clock based on whether the match is published */}
-                      {/* user story #11 - only show the match clock if the game is not published */}
-                      {/* if the game is published, hide the clock so users have to view the match report to see it */}
-                      {!fx.published && fx.clockRunning && (
+                      {/* card count for both teams - only show if not published */}
+                      {/* cards for both teams - only show if game is not published so supporters must open the report later to see cards */}
+                      {!fx.published && (
                         <div
                           style={{
                             display: "flex",
                             justifyContent: "space-between",
                             fontSize: 12,
                             opacity: 0.85,
-                            marginTop: 4,
-                            color: "var(--focus, #4ade80)",
-                            fontWeight: 600,
-                          }}
-                        >
-                          <span>Live</span>
-                          <span>{getLiveClock(fx)}</span>
-                        </div>
-                      )}
-
-                      {/* card counts for home and away teams - only shows if there are any cards and not published */}
-                      {/* reference: https://react.dev/learn/conditional-rendering - used react's conditional rendering to show or hide card counts based on whether the match is published */}
-                      {/*  if the game is not published and there are any cards, I show this cards row; if the game is published or there are no cards, I hide this part of the screen */}
-                      {/* user story #11 - only show card counts if the game is not published */}
-                      {/* if the game is published, hide the cards so users have to view the match report to see them */}
-                      {!fx.published && (fx.homeYellowCards > 0 || fx.homeRedCards > 0 || fx.awayYellowCards > 0 || fx.awayRedCards > 0) && (
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            fontSize: 11,
-                            opacity: 0.75,
-                            marginTop: 4,
+                            marginBottom: 4,
                           }}
                         >
                           <span>
@@ -676,23 +616,74 @@ export default function Home() {
                         </div>
                       )}
 
-                      {/* user story 10 - button to open the live timeline page for this favourite fixture */}
-                      {/* reference: https://react.dev/learn/conditional-rendering - used react's conditional rendering to show the button only when we have both competition type and id */}
-                      {compType && compId && (
+                      {/* date + status */}
+                      {/* match date and status (upcoming, live, full time) */}
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          fontSize: 12,
+                          opacity: 0.85,
+                          marginBottom: 4,
+                        }}
+                      >
+                        <span>{fx.date ? fmtDate(fx.date) : ""}</span>
+                        <span style={{ textTransform: "capitalize" }}>
+                          {fx.status || "upcoming"}
+                        </span>
+                      </div>
+
+                      {/* live match clock - only show if not published */}
+                      {/* live match clock for carbery games - only show when not published */}
+                      {!fx.published && (
                         <div
                           style={{
                             display: "flex",
-                            justifyContent: "flex-end",
-                            marginTop: 8,
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            fontSize: 12,
+                            opacity: 0.85,
                           }}
                         >
+                          <span>Match clock</span>
+                          <span>{getLiveClock(fx)}</span>
+                        </div>
+                      )}
+
+                      {/* view report button for completed & published games */}
+                      {compType && compId && fx.published && (fx.status || "").toLowerCase().trim() === "full time" && (
+                        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+                          <button
+                            className="chip"
+                            onClick={() => nav(`/report/${compType}/${compId}/${fx.id}`)}
+                          >
+                            View Match Report
+                          </button>
+                        </div>
+                      )}
+
+                      {/* button to open the live timeline page; label changes to "Show Match Timeline" once match is published (reporter feedback) */}
+                      {compType && compId && (
+                        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
                           <button
                             className="chip"
                             onClick={() =>
                               nav(`/fixture/${compType}/${compId}/${fx.id}`)
                             }
                           >
-                            Show Live Match Updates
+                            {fx.published ? "Show Match Timeline" : "Show Live Match Updates"}
+                          </button>
+                        </div>
+                      )}
+
+                      {/* admin button to update games */}
+                      {isAdmin && (
+                        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+                          <button
+                            className="chip"
+                            onClick={() => nav("/admin")}
+                          >
+                            Admin: Update Games
                           </button>
                         </div>
                       )}
@@ -708,15 +699,15 @@ export default function Home() {
         <div className="panel">
           <div className="panel-head">Munster Championship</div>
           <div className="panel-body">
-            {munsterFixtures.length === 0 && ( // if no munster matches show below
+            {munsterShown.length === 0 && ( // if no munster matches show below (full-time games hidden, shown on club page)
               <p className="muted">
-                No Munster fixtures yet for Kilbrittain or Ballygunner…
+                No Munster fixtures yet for Kilbrittain…
               </p>
             )}
 
-            {munsterFixtures.length > 0 && ( // if we have munster fixtures show them in a list
+            {munsterShown.length > 0 && ( // if we have munster fixtures show them in a list
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {munsterFixtures.map((fx) => {
+                {munsterShown.map((fx) => {
                   // cards defaulting to 0 if missing
                   const homeGoals = fx.homeGoals ?? 0;
                   const homePoints = fx.homePoints ?? 0;
@@ -806,6 +797,7 @@ export default function Home() {
                       {/* user story #11 - view report button for completed & published games */}
                       {/* when a game is finished and published, supporters can click this to see the full match report */}
                       {/* reference: https://react.dev/learn/conditional-rendering - used react's conditional rendering to show the view report button only when the game is published and finished */}
+                      {/* when the carbery game is finished and published, supporters can click to view the full match report */}
                       {fx.published && fx.status === "full time" && (
                         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
                           <button
@@ -818,6 +810,7 @@ export default function Home() {
                       )}
 
                       {/* user story 10 - supporter button to open the live timeline page for this munster championship game */}
+                      {/* supporter button to open the live timeline page for this carbery league game */}
                       <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
                         <button
                           className="chip"
@@ -825,11 +818,12 @@ export default function Home() {
                             nav(`/fixture/championship/munster-championship/${fx.id}`)
                           }
                         >
-                          Show Live Match Updates
+                          {fx.published ? "Show Match Timeline" : "Show Live Match Updates"}
                         </button>
                       </div>
 
                       {/* admin button to update games */}
+                      {/* admin button so admins can jump to the match console to update games */}
                       {isAdmin && (
                         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
                           <button
@@ -854,13 +848,13 @@ export default function Home() {
         <div className="panel">
             <div className="panel-head">Sigerson Cup</div>
             <div className="panel-body">
-              {/* if there are no sigerson cup games yet, show a message */}
-              {sigersonCupFixtures.length === 0 ? (
+              {/* if there are no sigerson cup games yet (after hiding full-time/published), show a message */}
+              {sigersonShown.length === 0 ? (
               <p className="muted">No Sigerson Cup fixtures yet...</p>
             ) : (
-              /* if there are games, show them in a list */
+              /* if there are games, show them in a list (full-time/published shown on club page only) */
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {sigersonCupFixtures.map((fx) => {
+                {sigersonShown.map((fx) => {
                   const homeGoals = fx.homeGoals ?? 0;
                   const homePoints = fx.homePoints ?? 0;
                   const awayGoals = fx.awayGoals ?? 0;
@@ -967,7 +961,7 @@ export default function Home() {
                             nav(`/fixture/championship/sigerson-cup/${fx.id}`)
                           }
                         >
-                          Show Live Match Updates
+                          {fx.published ? "Show Match Timeline" : "Show Live Match Updates"}
                         </button>
                       </div>
 
@@ -987,59 +981,316 @@ export default function Home() {
             </div>
           </div>
 
-        {/* premier senior hurling */}
+        {/* carbery junior a league panel: same layout as munster championship / sigerson cup; shows score, cards and live clock when not published, view report when published, live timeline button, admin button */}
         <div className="panel">
-          <div className="panel-head">Premier Senior Hurling</div>
+          <div className="panel-head">Carbery Junior A League</div>
           <div className="panel-body">
-            {!pshNextFixture ? (
-              <p className="muted">No fixtures yet...</p>
+            {carberyShown.length === 0 ? (
+              <p className="muted">No Carbery Junior A League fixtures yet...</p>
             ) : (
-              <div style={{ opacity: 0.8 }}>
-                Next fixture: {pshNextFixture.homeTeam} vs {pshNextFixture.awayTeam}{" "}
-                on {fmtDate(pshNextFixture.date)}
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {carberyShown.map((fx) => {
+                  const homeGoals = fx.homeGoals ?? 0;
+                  const homePoints = fx.homePoints ?? 0;
+                  const awayGoals = fx.awayGoals ?? 0;
+                  const awayPoints = fx.awayPoints ?? 0;
+
+                  return (
+                    <div
+                      key={fx.id}
+                      style={{
+                        borderRadius: 10,
+                        background: "var(--panel-subtle, #f8fafc)",
+                        padding: "10px 12px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          marginBottom: 4,
+                          fontWeight: 600,
+                        }}
+                      >
+                        <span>{fx.homeTeam}</span>
+                        <span>
+                          {homeGoals}:{homePoints} – {awayGoals}:{awayPoints}
+                        </span>
+                        <span>{fx.awayTeam}</span>
+                      </div>
+
+                      {!fx.published && (
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            fontSize: 12,
+                            opacity: 0.85,
+                            marginBottom: 4,
+                          }}
+                        >
+                          <span>
+                            Cards: Y{fx.homeYellowCards ?? 0} / R{fx.homeRedCards ?? 0}
+                          </span>
+                          <span>
+                            Cards: Y{fx.awayYellowCards ?? 0} / R{fx.awayRedCards ?? 0}
+                          </span>
+                        </div>
+                      )}
+
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          fontSize: 12,
+                          opacity: 0.85,
+                          marginBottom: 4,
+                        }}
+                      >
+                        <span>{fx.date ? fmtDate(fx.date) : ""}</span>
+                        <span style={{ textTransform: "capitalize" }}>
+                          {fx.status || "upcoming"}
+                        </span>
+                      </div>
+
+                      {!fx.published && (
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            fontSize: 12,
+                            opacity: 0.85,
+                          }}
+                        >
+                          <span>Match clock</span>
+                          <span>{getLiveClock(fx)}</span>
+                        </div>
+                      )}
+
+                      {fx.published && fx.status === "full time" && (
+                        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+                          <button
+                            className="chip"
+                            onClick={() => nav(`/report/league/west-cork-junior-a/${fx.id}`)}
+                          >
+                            View Match Report
+                          </button>
+                        </div>
+                      )}
+
+                      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+                        <button
+                          className="chip"
+                          onClick={() =>
+                            nav(`/fixture/league/west-cork-junior-a/${fx.id}`)
+                          }
+                        >
+                          {fx.published ? "Show Match Timeline" : "Show Live Match Updates"}
+                        </button>
+                      </div>
+
+                      {isAdmin && (
+                        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+                          <button className="chip" onClick={() => nav("/admin")}>
+                            Admin: Update Games
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
         </div>
 
-        {/* Premier Senior Football */}
+        {/* redfm division 6 league panel: same layout as carbery; shows score, cards and live clock when not published, view report when published, live timeline button, admin button */}
+        {/* copied the previous league panel code so redfm division 6 behaves the same as other competitions on the home page */}
         <div className="panel">
-          <div className="panel-head">Premier Senior Football</div>
+          <div className="panel-head">RedFM Division 6 League</div>
           <div className="panel-body">
-            {!psfNextFixture ? (
-              <p className="muted">No fixtures yet...</p>
+            {redfmShown.length === 0 ? (
+              <p className="muted">No RedFM Division 6 fixtures yet...</p>
             ) : (
-              <div style={{ opacity: 0.8 }}>
-                Next fixture: {psfNextFixture.homeTeam} vs {psfNextFixture.awayTeam}{" "}
-                on {fmtDate(psfNextFixture.date)}
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {redfmShown.map((fx) => {
+                  const homeGoals = fx.homeGoals ?? 0;
+                  const homePoints = fx.homePoints ?? 0;
+                  const awayGoals = fx.awayGoals ?? 0;
+                  const awayPoints = fx.awayPoints ?? 0;
+
+                  return (
+                    <div
+                      key={fx.id}
+                      style={{
+                        borderRadius: 10,
+                        background: "var(--panel-subtle, #f8fafc)",
+                        padding: "10px 12px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          marginBottom: 4,
+                          fontWeight: 600,
+                        }}
+                      >
+                        <span>{fx.homeTeam}</span>
+                        <span>
+                          {homeGoals}:{homePoints} – {awayGoals}:{awayPoints}
+                        </span>
+                        <span>{fx.awayTeam}</span>
+                      </div>
+
+                      {!fx.published && (
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            fontSize: 12,
+                            opacity: 0.85,
+                            marginBottom: 4,
+                          }}
+                        >
+                          <span>
+                            Cards: Y{fx.homeYellowCards ?? 0} / R{fx.homeRedCards ?? 0}
+                          </span>
+                          <span>
+                            Cards: Y{fx.awayYellowCards ?? 0} / R{fx.awayRedCards ?? 0}
+                          </span>
+                        </div>
+                      )}
+
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          fontSize: 12,
+                          opacity: 0.85,
+                          marginBottom: 4,
+                        }}
+                      >
+                        <span>{fx.date ? fmtDate(fx.date) : ""}</span>
+                        <span style={{ textTransform: "capitalize" }}>
+                          {fx.status || "upcoming"}
+                        </span>
+                      </div>
+
+                      {!fx.published && (
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            fontSize: 12,
+                            opacity: 0.85,
+                          }}
+                        >
+                          <span>Match clock</span>
+                          <span>{getLiveClock(fx)}</span>
+                        </div>
+                      )}
+
+                      {fx.published && fx.status === "full time" && (
+                        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+                          <button
+                            className="chip"
+                            onClick={() => nav(`/report/league/redfm-division-6/${fx.id}`)}
+                          >
+                            View Match Report
+                          </button>
+                        </div>
+                      )}
+
+                      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
+                        <button
+                          className="chip"
+                          onClick={() =>
+                            nav(`/fixture/league/redfm-division-6/${fx.id}`)
+                          }
+                        >
+                          {fx.published ? "Show Match Timeline" : "Show Live Match Updates"}
+                        </button>
+
+                        {isAdmin && (
+                          <button
+                            className="chip"
+                            onClick={() => nav("/admin")}
+                          >
+                            Admin: Update Games
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
         </div>
       </section>
 
-      {/* right sidebar */}
+      {/* iteration 6 - right sidebar news card; shows published reporter reports from firestore,
+      each link goes to full report page; empty message when no reports yet */}
       <aside className="right" aria-label="News">
         <div className="card">
           <h2 className="card-title">News</h2>
-
-          <div className="news-item">
-            <img src={kilbrittainImg} alt="Kilbrittain" className="news-img" />
-            <div>
-              <div className="news-title">
-                Kilbrittain win the county after a hard-fought battle vs the Glen
-              </div>
-              <div className="news-meta">4d ago · OneClub</div>
-            </div>
-          </div>
-
-          <div className="news-item">
-            <img src={barryroeImg} alt="Barryroe" className="news-img" />
-            <div>
-              <div className="news-title">Charlie Kenny leads Barryroe to victory</div>
-              <div className="news-meta">12h ago · OneClub</div>
-            </div>
-          </div>
+          {publishedNews.length === 0 ? (
+            <p className="muted" style={{ margin: 0, fontSize: "0.9rem" }}>
+              No published reports yet. Reports from the Reporter dashboard appear here when published.
+            </p>
+          ) : (
+            /* iteration 6 - list of links to news report pages; each shows title, relative time,
+            author */
+            publishedNews.map((item) => (
+              <Link
+                key={item.id}
+                to={`/news/${item.id}`}
+                className="news-item"
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "64px 1fr",
+                  gap: "10px",
+                  alignItems: "center",
+                  padding: "8px 0",
+                  borderBottom: "1px solid #e2e8f0",
+                  textDecoration: "none",
+                  color: "inherit",
+                  cursor: "pointer",
+                }}
+              >
+                {/* iteration 6 - cover image if present, otherwise placeholder thumb; title, relative time, author shown next to it */}
+                {item.coverImageUrl ? (
+                  <img
+                    src={item.coverImageUrl}
+                    alt={item.title || "Report cover"}
+                    style={{
+                      width: 64,
+                      height: 48,
+                      borderRadius: 8,
+                      objectFit: "cover",
+                      border: "1px solid #e2e8f0",
+                    }}
+                  />
+                ) : (
+                  <div
+                    className="thumb"
+                    style={{ width: 64, height: 48, borderRadius: 8, background: "#f1f5f9", border: "1px solid #e2e8f0" }}
+                    aria-hidden
+                  />
+                )}
+                <div>
+                  <div className="news-title">{item.title || "Untitled"}</div>
+                  <div className="news-meta">
+                    {relativeTime(item.publishedAt)}
+                    {item.author ? ` · ${item.author}` : " · OneClub"}
+                  </div>
+                </div>
+              </Link>
+            ))
+          )}
         </div>
       </aside>
     </div>

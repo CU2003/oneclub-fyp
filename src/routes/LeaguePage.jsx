@@ -17,6 +17,7 @@ import {
   orderBy,
   limit
 } from "firebase/firestore";
+import AdSidebar from "./AdSidebar.jsx"; // shared ads sidebar component now living in routes folder
 
 // small helper: display + for positive numbers
 const fmtSigned = (n) => (n > 0 ? `+${n}` : `${n}`);
@@ -63,7 +64,9 @@ export default function LeaguePage() {
   // layout
   return (
     <div className="layout">
-      <aside className="left" />
+      <aside className="left" aria-label="Sponsors">
+        <AdSidebar position="league-left" />
+      </aside>
       <section className="center" aria-label="League standings">
         {/* back button */}
         <div className="toolbar">

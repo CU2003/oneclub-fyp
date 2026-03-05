@@ -37,6 +37,20 @@ import {
 
 // admins clubs is loaded from firestore (users/uid)
 
+// returns Firestore path array for a competition's fixtures collection
+function getFixturePath(competitionType, competitionId) {
+  if (!competitionType || !competitionId) return ["Championship", "munster-championship", "fixtures"];
+  if (competitionType === "championship") return ["Championship", competitionId, "fixtures"];
+  if (competitionType === "league") return ["Leagues", competitionId, "fixtures"];
+  return ["Championship", "munster-championship", "fixtures"];
+}
+
+// display names for leagues (matches firestore league doc "name" where set)
+const LEAGUE_DISPLAY_NAMES = {
+  "west-cork-junior-a": "Carbery Junior A League",
+  "redfm-division-6": "RedFM Division 6",
+};
+
 function AdminMatchConsole() {
   // currentuser is logged in admin
   const { currentUser, userDoc } = useAuth();
@@ -45,9 +59,12 @@ function AdminMatchConsole() {
   const [fixtures, setFixtures] = useState([]); // list of fixtures admin can see
   const [loadingFixtures, setLoadingFixtures] = useState(true); // loading message flag for users
   const [fixturesError, setFixturesError] = useState(""); // error message if fixture fails to load
+  const [fixturesVersion, setFixturesVersion] = useState(0); // bump after create to refresh list
 
   const [selectedFixtureId, setSelectedFixtureId] = useState(""); // id of the fixture the admin clicks
   const [selectedFixture, setSelectedFixture] = useState(null); // data from selected fixture from firestore
+  // which competition the selected fixture belongs to (so we read/update the correct collection)
+  const [selectedFixtureSource, setSelectedFixtureSource] = useState(null); // { type, id }
 
   const [actionError, setActionError] = useState(""); // error for actions like updating score, cards etc.
 
@@ -65,8 +82,9 @@ function AdminMatchConsole() {
 
   // user story 14 - admin enters lineups prior to the game so reporters and supporters can see who is playing
   // reference: https://chatgpt.com/share/698f5263-92fc-8004-bd06-d94790f01d1c (lines 66-72)
-  // I took code from this chat and used it for my project (made changes to suit also).
-  // newHomeLineup / newAwayLineup: text from the create-fixture form (one player per line). Parsed and saved as arrays when the admin creates a new game.
+  // i took code from this chat and used it for my project (made changes to suit also).
+  // gaa lineup pitch layout reference: https://chatgpt.com/share/69a18c1b-0f08-8004-a65e-99e68c025dfa - this shows how the saved lineups will appear on the pitch in the fixture timeline page.
+  // newHomeLineup / newAwayLineup: text from the create-fixture form (one player per line). parsed and saved as arrays when the admin creates a new game so the pitch and reports can read them.
   const [newHomeLineup, setNewHomeLineup] = useState("");
   const [newAwayLineup, setNewAwayLineup] = useState("");
   // editingHomeLineup / editingAwayLineup: text for the Team Lineups section when editing an existing fixture. loaded from fixture then saved using save lineups.
@@ -77,9 +95,17 @@ function AdminMatchConsole() {
   const [pendingScorer, setPendingScorer] = useState("");
   const [showScorerModal, setShowScorerModal] = useState(false);
   const [scorerError, setScorerError] = useState("");
+  // pending card event confirmation (team, card type, and updated card counts)
+  const [pendingCard, setPendingCard] = useState(null);
+  const [pendingCardPlayer, setPendingCardPlayer] = useState("");
+  const [showCardModal, setShowCardModal] = useState(false);
+  const [cardError, setCardError] = useState("");
   
   // verifier name input for when admin publishes a match
   const [verifierName, setVerifierName] = useState("");
+
+  // which competition to post to when creating a new fixture (index into allCompetitions)
+  const [selectedCreateCompetitionIndex, setSelectedCreateCompetitionIndex] = useState(0);
 
   // club name is loaded from the admins firestore profile
   const [clubName, setClubName] = useState(null);
@@ -172,12 +198,52 @@ function AdminMatchConsole() {
   const fixtureCollectionPath = useMemo(() => {
     const type = userDoc?.competitionType || "championship";
     const id = userDoc?.competitionId || "munster-championship";
-
-    if (type === "championship") return ["Championship", id, "fixtures"];
-    if (type === "league") return ["Leagues", id, "fixtures"];
-    // fallback
-    return ["Championship", "munster-championship", "fixtures"];
+    return getFixturePath(type, id);
   }, [userDoc?.competitionType, userDoc?.competitionId]);
+
+  // primary + extra competitions this admin can post to (e.g. kilbrittain: munster championship + west cork junior a + redfm division 6)
+  const allCompetitions = useMemo(() => {
+    const primary = {
+      type: userDoc?.competitionType || "championship",
+      id: userDoc?.competitionId || "munster-championship",
+    };
+    const label = (t, i) => {
+      const prefix = t === "league" ? "League" : "Championship";
+      const displayName = t === "league" && LEAGUE_DISPLAY_NAMES[i] ? LEAGUE_DISPLAY_NAMES[i] : (i || "").replace(/-/g, " ");
+      return `${prefix}: ${displayName}`;
+    };
+    const list = [{ ...primary, label: label(primary.type, primary.id) }];
+    const extra = userDoc?.extraCompetitions || [];
+    extra.forEach((c) => {
+      list.push({
+        type: c.competitionType || "league",
+        id: c.competitionId || "",
+        label: label(c.competitionType, c.competitionId),
+      });
+    });
+    // always offer redfm division 6 as an extra league to post to
+    // path for this league is Leagues/redfm-division-6/fixtures
+    list.push({
+      type: "league",
+      id: "redfm-division-6",
+      label: label("league", "redfm-division-6"),
+    });
+    return list;
+  }, [userDoc?.competitionType, userDoc?.competitionId, userDoc?.extraCompetitions]);
+
+  // path for the competition selected in the create-fixture form
+  const createFixturePath = useMemo(() => {
+    const c = allCompetitions[selectedCreateCompetitionIndex];
+    return c ? getFixturePath(c.type, c.id) : fixtureCollectionPath;
+  }, [allCompetitions, selectedCreateCompetitionIndex, fixtureCollectionPath]);
+
+  // path for the currently selected fixture (so updates go to the right collection)
+  const selectedFixturePath = useMemo(() => {
+    if (selectedFixtureSource?.type && selectedFixtureSource?.id) {
+      return getFixturePath(selectedFixtureSource.type, selectedFixtureSource.id);
+    }
+    return fixtureCollectionPath;
+  }, [selectedFixtureSource, fixtureCollectionPath]);
 
   const competitionLabel = useMemo(() => {
     const type = userDoc?.competitionType || "championship";
@@ -221,9 +287,8 @@ function AdminMatchConsole() {
     }
 
     try {
-      // figure out where in firestore to save this game
-      // uses the fixtureCollectionPath we calculated earlier
-      const fixturesCol = collection(db, ...fixtureCollectionPath);
+      // figure out where in firestore to save this game (uses competition chosen in create form)
+      const fixturesCol = collection(db, ...createFixturePath);
       
       // user story 14 - reference: https://chatgpt.com/share/698f5263-92fc-8004-bd06-d94790f01d1c (lines 226-245)
       // I took code from this chat and used it for my project (made changes to suit also).
@@ -269,6 +334,7 @@ function AdminMatchConsole() {
       // if we get here, the game was created successfully
       // show a success message and clear the form
       setCreateSuccess("Fixture created.");
+      setFixturesVersion((v) => v + 1); // refresh fixture list so new game appears
       setNewAwayTeam("");
       setNewDateTime("");
       setNewVenue("");
@@ -286,38 +352,49 @@ function AdminMatchConsole() {
   // lines 64-110 ~
   // used this to assist with the changing of championship/fixtures path and filter by the admin's club
   // iteration 2
-  // load fixtures that this admin is allowed to see
+  // load fixtures from all competitions this admin can post to (primary + extra)
   useEffect(() => {
     async function loadFixtures() {
       setLoadingFixtures(true);
       setFixturesError("");
 
-      // wait until we know the admin's clubName before filtering
-      // otherwise the list may briefly show "all fixtures"
       if (loadingClubName) return;
+      if (!allCompetitions.length) {
+        setLoadingFixtures(false);
+        return;
+      }
 
-      // firestore query to get fixtures ordered by date
       try {
-        const q = query(
-          collection(db, ...fixtureCollectionPath),
-          orderBy("date", "asc")
+        const results = await Promise.all(
+          allCompetitions.map((comp) => {
+            const path = getFixturePath(comp.type, comp.id);
+            const q = query(
+              collection(db, ...path),
+              orderBy("date", "asc")
+            );
+            return getDocs(q).then((snap) =>
+              snap.docs.map((d) => ({
+                id: d.id,
+                ...d.data(),
+                _competitionType: comp.type,
+                _competitionId: comp.id,
+              }))
+            );
+          })
         );
 
-        // runs query once and gets all matching documents
-        const snap = await getDocs(q);
-        // turns each firestore document into a plain js object with an id
-        const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-
-        // if this admin is tied to a club, only show games where that club is home or away
-        // if clubName is null, show all fixtures (you can change to block access if you prefer).
+        const all = results.flat();
         const filtered = clubName
           ? all.filter((f) => f.homeTeam === clubName || f.awayTeam === clubName)
           : all;
+        const sorted = filtered.sort((a, b) => {
+          const dateA = a.date?.toDate ? a.date.toDate().getTime() : 0;
+          const dateB = b.date?.toDate ? b.date.toDate().getTime() : 0;
+          return dateA - dateB;
+        });
 
-        setFixtures(filtered);
+        setFixtures(sorted);
       } catch (err) {
-        // if anything goes wrong, log error and show frienldy message
-        // crucial for testing
         console.error(err);
         setFixturesError("Could not load fixtures for admin console.");
       } finally {
@@ -326,7 +403,7 @@ function AdminMatchConsole() {
     }
 
     loadFixtures();
-  }, [clubName, loadingClubName]); // depends on loaded clubName
+  }, [clubName, loadingClubName, allCompetitions, fixturesVersion]);
 
   // subscribe to currently selected fixture
   useEffect(() => {
@@ -339,10 +416,10 @@ function AdminMatchConsole() {
       return;
     }
 
-    // reference to fiture doc in firestore
+    // reference to fixture doc in firestore (use path for selected fixture's competition)
     const fixtureRef = doc(
       db,
-      ...fixtureCollectionPath,
+      ...selectedFixturePath,
       selectedFixtureId
     );
 
@@ -401,7 +478,7 @@ function AdminMatchConsole() {
 
     // when changing fixture or leaving page, stop listening
     return () => unsubscribe();
-  }, [selectedFixtureId]);
+  }, [selectedFixtureId, selectedFixturePath]);
 
   // Local ticking for the clock in admin view (UI only – no Firestore writes)
   useEffect(() => {
@@ -465,10 +542,10 @@ function AdminMatchConsole() {
   }
 
   // reference: https://chatgpt.com/share/698dd95f-c4bc-8004-abb2-f58a3426cc2b
-  // used this chatgpt example to follow a pattern where scores, cards and status updates are all saved as events in one subcollection under each game
-  // also used it to confirm scores in a popup with a frozen clock time, and to remove the latest matching event when undoing scores or cards so the supporter timeline stays accurate
-  // lines 456-663 - took and implemented the pattern for confirming scores in a popup, freezing the clock time, saving score events, and undoing the latest matching score event
-  // lines 672-788 and 794-831 - took and implemented the pattern for adding card events, undoing the latest matching card event, and logging status change events into the same events subcollection for the supporter timeline
+  // used this chatgpt example to design how updating scores should work:
+  // save updated scores on the fixture document, and also save a score event into a subcollection called "events"
+  // each event stores the player name, the team, the type of score, the frozen clock time, and a snapshot of the score at that moment
+  // also used the same idea for cards and status changes so the supporter timeline and match report can rebuild what happened in order
   // user story 3 and 5 - updates the score in firestore
   // team can be "home" or "away"
   // scoreType can be "goal" or "point"
@@ -502,7 +579,7 @@ function AdminMatchConsole() {
       // reference to this fixture in firestore
       const fixtureRef = doc(
         db,
-        ...fixtureCollectionPath,
+        ...selectedFixturePath,
         selectedFixtureId
       );
       // save updated scores to firestore so supporters see them instantly
@@ -525,7 +602,7 @@ function AdminMatchConsole() {
         // create a subcollection "events" under this fixture to store scoring events
         const eventsCol = collection(
           db,
-          ...fixtureCollectionPath,
+          ...selectedFixturePath,
           selectedFixtureId,
           "events"
         );
@@ -561,7 +638,7 @@ function AdminMatchConsole() {
         try {
           const eventsCol = collection(
             db,
-            ...fixtureCollectionPath,
+            ...selectedFixturePath,
             selectedFixtureId,
             "events"
           );
@@ -592,7 +669,7 @@ function AdminMatchConsole() {
             if (toDelete) {
               const evRef = doc(
                 db,
-                ...fixtureCollectionPath,
+                ...selectedFixturePath,
                 selectedFixtureId,
                 "events",
                 toDelete.id
@@ -685,11 +762,84 @@ function AdminMatchConsole() {
     setScorerError("");
   }
 
+  // opens a confirmation popup when admin clicks a card button
+  // this lets them choose which player received the card and shows updated card counts before saving
+  function openCardConfirm(team, cardType) {
+    if (!selectedFixture) return;
+
+    // start from current card counts
+    let { homeYellow, homeRed, awayYellow, awayRed } = getCards();
+
+    // simulate adding one card so we can show the updated totals in the popup
+    if (team === "home") {
+      if (cardType === "yellow") {
+        homeYellow = homeYellow + 1;
+      } else {
+        homeRed = homeRed + 1;
+      }
+    } else {
+      if (cardType === "yellow") {
+        awayYellow = awayYellow + 1;
+      } else {
+        awayRed = awayRed + 1;
+      }
+    }
+
+    setPendingCard({
+      team,
+      cardType,
+      homeYellow,
+      homeRed,
+      awayYellow,
+      awayRed,
+      // freeze the clock time at the moment the admin clicked the card button
+      clockSeconds: elapsedSeconds,
+    });
+    setPendingCardPlayer("");
+    setCardError("");
+    setShowCardModal(true);
+  }
+
+  // confirm button in the card popup - saves the card and logs event
+  async function confirmCardEvent() {
+    if (!pendingCard) return;
+    if (!pendingCardPlayer) {
+      setCardError("Please select a player.");
+      return;
+    }
+
+    try {
+      await changeCards(
+        pendingCard.team,
+        pendingCard.cardType,
+        +1,
+        pendingCardPlayer,
+        pendingCard.clockSeconds
+      );
+      setShowCardModal(false);
+      setPendingCard(null);
+      setPendingCardPlayer("");
+      setCardError("");
+    } catch (err) {
+      console.error(err);
+      setCardError("Could not save card event. Try again.");
+    }
+  }
+
+  function cancelCardEvent() {
+    setShowCardModal(false);
+    setPendingCard(null);
+    setPendingCardPlayer("");
+    setCardError("");
+  }
+
   // user story 3 and 5 - updates cards in firestore
   // team can be "home" or "away"
   // cardType can be "yellow" or "red"
   // delta is +1 to add a card, or -1 to remove one (for corrections)
-  async function changeCards(team, cardType, delta) {
+  // playerName is optional - used when logging who received the card
+  // eventClockSeconds lets us freeze the clock time at the moment the admin clicked the button
+  async function changeCards(team, cardType, delta, playerName, eventClockSeconds) {
     if (!selectedFixtureId || !selectedFixture) return;
     setActionError("");
 
@@ -714,7 +864,7 @@ function AdminMatchConsole() {
     try {
       const fixtureRef = doc(
         db,
-        ...fixtureCollectionPath,
+        ...selectedFixturePath,
         selectedFixtureId
       );
       // saves updated cards counts to firestore so supporters see them instantly
@@ -731,16 +881,23 @@ function AdminMatchConsole() {
         try {
           const eventsCol = collection(
             db,
-            ...fixtureCollectionPath,
+            ...selectedFixturePath,
             selectedFixtureId,
             "events"
           );
+
+          const clockAtEvent =
+            typeof eventClockSeconds === "number" ? eventClockSeconds : elapsedSeconds;
+
           await addDoc(eventsCol, {
             type: "card",
             team,
             cardType,
-            clockSeconds: elapsedSeconds,
+            // optional player name if admin selected one
+            playerName: playerName || null,
+            clockSeconds: clockAtEvent,
             createdAt: serverTimestamp(),
+            // snapshot of card counts at this moment
             homeYellow,
             homeRed,
             awayYellow,
@@ -757,7 +914,7 @@ function AdminMatchConsole() {
         try {
           const eventsCol = collection(
             db,
-            ...fixtureCollectionPath,
+            ...selectedFixturePath,
             selectedFixtureId,
             "events"
           );
@@ -789,7 +946,7 @@ function AdminMatchConsole() {
             if (toDelete) {
               const evRef = doc(
                 db,
-                ...fixtureCollectionPath,
+                ...selectedFixturePath,
                 selectedFixtureId,
                 "events",
                 toDelete.id
@@ -816,7 +973,7 @@ function AdminMatchConsole() {
     try {
       const fixtureRef = doc(
         db,
-        ...fixtureCollectionPath,
+        ...selectedFixturePath,
         selectedFixtureId
       );
       // save the new status to firestore so supporters see it instantly
@@ -827,7 +984,7 @@ function AdminMatchConsole() {
       try {
         const eventsCol = collection(
           db,
-          ...fixtureCollectionPath,
+          ...selectedFixturePath,
           selectedFixtureId,
           "events"
         );
@@ -868,7 +1025,7 @@ function AdminMatchConsole() {
       // find the game in firestore
       const fixtureRef = doc(
         db,
-        ...fixtureCollectionPath,
+        ...selectedFixturePath,
         selectedFixtureId
       );
       // user story 18 - reference: https://stackoverflow.com/questions/60056185/convert-firestore-timestamp-to-date-into-different-format (timestamp format used when displaying verifiedAt; here we store serverTimestamp())
@@ -903,7 +1060,7 @@ function AdminMatchConsole() {
       // find the game in firestore
       const fixtureRef = doc(
         db,
-        ...fixtureCollectionPath,
+        ...selectedFixturePath,
         selectedFixtureId
       );
       // set published to false, which tells the home page to show all detailed stats again
@@ -943,7 +1100,7 @@ function AdminMatchConsole() {
 
     const fixtureRef = doc(
       db,
-      ...fixtureCollectionPath,
+      ...selectedFixturePath,
       selectedFixtureId
     );
 
@@ -964,7 +1121,7 @@ function AdminMatchConsole() {
 
     const fixtureRef = doc(
       db,
-      ...fixtureCollectionPath,
+      ...selectedFixturePath,
       selectedFixtureId
     );
 
@@ -986,7 +1143,7 @@ function AdminMatchConsole() {
 
     const fixtureRef = doc(
       db,
-      ...fixtureCollectionPath,
+      ...selectedFixturePath,
       selectedFixtureId
     );
     // reset all clock fields in firestore back to zero
@@ -1001,6 +1158,7 @@ function AdminMatchConsole() {
   // clears the selected game and returns to list of fixtures
   function closeCurrentGame() {
     setSelectedFixtureId("");
+    setSelectedFixtureSource(null);
     setSelectedFixture(null);
     setElapsedSeconds(0);
     setIsClockRunning(false);
@@ -1009,6 +1167,14 @@ function AdminMatchConsole() {
     setEditingHomeLineup("");
     setEditingAwayLineup("");
     setVerifierName(""); // clear verifier name when closing fixture
+    setShowScorerModal(false);
+    setPendingScore(null);
+    setPendingScorer("");
+    setScorerError("");
+    setShowCardModal(false);
+    setPendingCard(null);
+    setPendingCardPlayer("");
+    setCardError("");
   }
   
   // user story 14 - reference: https://chatgpt.com/share/698f5263-92fc-8004-bd06-d94790f01d1c (lines 1014-1045)
@@ -1031,7 +1197,7 @@ function AdminMatchConsole() {
       
       const fixtureRef = doc(
         db,
-        ...fixtureCollectionPath,
+        ...selectedFixturePath,
         selectedFixtureId
       );
       
@@ -1150,6 +1316,29 @@ function AdminMatchConsole() {
             </label>
           </div>
 
+          {/* always show the competition selector; copied from earlier version but extended so redfm division 6 appears alongside the admin's main competition */}
+          <label style={{ fontSize: 14, maxWidth: 360 }}>
+            Post to competition
+            <select
+              value={selectedCreateCompetitionIndex}
+              onChange={(e) => setSelectedCreateCompetitionIndex(Number(e.target.value))}
+              style={{
+                display: "block",
+                marginTop: 4,
+                width: "100%",
+                padding: "6px 8px",
+                borderRadius: 6,
+                border: "1px solid #ddd",
+              }}
+            >
+              {allCompetitions.map((comp, idx) => (
+                <option key={`${comp.type}-${comp.id}`} value={idx}>
+                  {comp.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
           <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
             <label style={{ fontSize: 14 }}>
               Date &amp; time
@@ -1254,7 +1443,8 @@ function AdminMatchConsole() {
         {!loadingFixtures && fixtures.length === 0 && !fixturesError && (
           <p>
             No fixtures found for{" "}
-            <strong>{clubName ?? "this admin"}</strong> in Munster Championship.
+            <strong>{clubName ?? "this admin"}</strong>
+            {allCompetitions.length > 1 ? " in your competitions." : " in " + competitionLabel + "."}
           </p>
         )}
 
@@ -1270,7 +1460,7 @@ function AdminMatchConsole() {
           >
             {fixtures.map((fix) => (
               <div
-                key={fix.id}
+                key={`${fix._competitionType ?? ""}-${fix._competitionId ?? ""}-${fix.id}`}
                 style={{
                   display: "flex",
                   justifyContent: "space-between",
@@ -1279,11 +1469,25 @@ function AdminMatchConsole() {
                   borderBottom: "1px solid #eee",
                 }}
               >
-                {/* text summary of the game */}
-                <span>{formatFixtureRow(fix)}</span>
+                {/* text summary of the game (show competition if admin has more than one) */}
+                <span>
+                  {formatFixtureRow(fix)}
+                  {allCompetitions.length > 1 && fix._competitionId && (
+                    <span style={{ fontSize: 12, opacity: 0.7, marginLeft: 8 }}>
+                      ({LEAGUE_DISPLAY_NAMES[fix._competitionId] ?? fix._competitionId.replace(/-/g, " ")})
+                    </span>
+                  )}
+                </span>
                 {/* button to open this match in the console */}
                 <button
-                  onClick={() => setSelectedFixtureId(fix.id)}
+                  onClick={() => {
+                    setSelectedFixtureId(fix.id);
+                    setSelectedFixtureSource(
+                      fix._competitionType != null && fix._competitionId != null
+                        ? { type: fix._competitionType, id: fix._competitionId }
+                        : null
+                    );
+                  }}
                   style={{ marginLeft: "1rem" }}
                 >
                   {selectedFixtureId === fix.id ? "Viewing" : "Open match"}
@@ -1399,17 +1603,64 @@ function AdminMatchConsole() {
                   marginBottom: "0.5rem",
                 }}
               >
-                <button onClick={() => openScorerConfirm("home", "point")}>
-                  + {homeName} point
+                {/* add points – blue buttons */}
+                <button
+                  onClick={() => openScorerConfirm("home", "point")}
+                  style={{
+                    padding: "0.35rem 0.75rem",
+                    borderRadius: 999,
+                    border: "none",
+                    background: "#2563eb",
+                    color: "#ffffff",
+                    fontSize: "0.9rem",
+                    cursor: "pointer",
+                  }}
+                >
+                  {homeName} point
                 </button>
-                <button onClick={() => openScorerConfirm("home", "goal")}>
-                  + {homeName} goal
+                <button
+                  onClick={() => openScorerConfirm("away", "point")}
+                  style={{
+                    padding: "0.35rem 0.75rem",
+                    borderRadius: 999,
+                    border: "none",
+                    background: "#2563eb",
+                    color: "#ffffff",
+                    fontSize: "0.9rem",
+                    cursor: "pointer",
+                  }}
+                >
+                  {awayName} point
                 </button>
-                <button onClick={() => openScorerConfirm("away", "point")}>
-                  + {awayName} point
+
+                {/* add goals – green buttons */}
+                <button
+                  onClick={() => openScorerConfirm("home", "goal")}
+                  style={{
+                    padding: "0.35rem 0.75rem",
+                    borderRadius: 999,
+                    border: "none",
+                    background: "#16a34a",
+                    color: "#ffffff",
+                    fontSize: "0.9rem",
+                    cursor: "pointer",
+                  }}
+                >
+                  {homeName} goal
                 </button>
-                <button onClick={() => openScorerConfirm("away", "goal")}>
-                  + {awayName} goal
+                <button
+                  onClick={() => openScorerConfirm("away", "goal")}
+                  style={{
+                    padding: "0.35rem 0.75rem",
+                    borderRadius: 999,
+                    border: "none",
+                    background: "#16a34a",
+                    color: "#ffffff",
+                    fontSize: "0.9rem",
+                    cursor: "pointer",
+                  }}
+                >
+                  {awayName} goal
                 </button>
               </div>
             </div>
@@ -1417,7 +1668,7 @@ function AdminMatchConsole() {
             {/* user story 5 - correction buttons for admin in case wrong score updated */}
             {/* if the admin added a score by mistake, they can click these buttons to remove it */}
             <div style={{ marginTop: "1rem" }}>
-              <h4>Score Correction</h4>
+              <h4>Score correction</h4>
               <div
                 style={{
                   display: "flex",
@@ -1426,16 +1677,63 @@ function AdminMatchConsole() {
                   marginBottom: "0.5rem",
                 }}
               >
-                <button onClick={() => changeScore("home", "point", -1)}>
+                {/* remove points – blue buttons with minus sign */}
+                <button
+                  onClick={() => changeScore("home", "point", -1)}
+                  style={{
+                    padding: "0.35rem 0.75rem",
+                    borderRadius: 999,
+                    border: "none",
+                    background: "#2563eb",
+                    color: "#ffffff",
+                    fontSize: "0.9rem",
+                    cursor: "pointer",
+                  }}
+                >
                   - {homeName} point
                 </button>
-                <button onClick={() => changeScore("home", "goal", -1)}>
-                  - {homeName} goal
-                </button>
-                <button onClick={() => changeScore("away", "point", -1)}>
+                <button
+                  onClick={() => changeScore("away", "point", -1)}
+                  style={{
+                    padding: "0.35rem 0.75rem",
+                    borderRadius: 999,
+                    border: "none",
+                    background: "#2563eb",
+                    color: "#ffffff",
+                    fontSize: "0.9rem",
+                    cursor: "pointer",
+                  }}
+                >
                   - {awayName} point
                 </button>
-                <button onClick={() => changeScore("away", "goal", -1)}>
+
+                {/* remove goals – green buttons with minus sign */}
+                <button
+                  onClick={() => changeScore("home", "goal", -1)}
+                  style={{
+                    padding: "0.35rem 0.75rem",
+                    borderRadius: 999,
+                    border: "none",
+                    background: "#16a34a",
+                    color: "#ffffff",
+                    fontSize: "0.9rem",
+                    cursor: "pointer",
+                  }}
+                >
+                  - {homeName} goal
+                </button>
+                <button
+                  onClick={() => changeScore("away", "goal", -1)}
+                  style={{
+                    padding: "0.35rem 0.75rem",
+                    borderRadius: 999,
+                    border: "none",
+                    background: "#16a34a",
+                    color: "#ffffff",
+                    fontSize: "0.9rem",
+                    cursor: "pointer",
+                  }}
+                >
                   - {awayName} goal
                 </button>
               </div>
@@ -1453,17 +1751,64 @@ function AdminMatchConsole() {
                   marginBottom: "0.5rem",
                 }}
               >
-                <button onClick={() => changeCards("home", "yellow", +1)}>
-                  + {homeName} yellow
+                {/* add yellow / red card for home – colours match card type */}
+                <button
+                  onClick={() => openCardConfirm("home", "yellow")}
+                  style={{
+                    padding: "0.35rem 0.75rem",
+                    borderRadius: 999,
+                    border: "none",
+                    background: "#eab308",
+                    color: "#1f2937",
+                    fontSize: "0.9rem",
+                    cursor: "pointer",
+                  }}
+                >
+                  {homeName} yellow
                 </button>
-                <button onClick={() => changeCards("home", "red", +1)}>
-                  + {homeName} red
+                <button
+                  onClick={() => openCardConfirm("home", "red")}
+                  style={{
+                    padding: "0.35rem 0.75rem",
+                    borderRadius: 999,
+                    border: "none",
+                    background: "#dc2626",
+                    color: "#ffffff",
+                    fontSize: "0.9rem",
+                    cursor: "pointer",
+                  }}
+                >
+                  {homeName} red
                 </button>
-                <button onClick={() => changeCards("away", "yellow", +1)}>
-                  + {awayName} yellow
+
+                {/* add yellow / red card for away */}
+                <button
+                  onClick={() => openCardConfirm("away", "yellow")}
+                  style={{
+                    padding: "0.35rem 0.75rem",
+                    borderRadius: 999,
+                    border: "none",
+                    background: "#eab308",
+                    color: "#1f2937",
+                    fontSize: "0.9rem",
+                    cursor: "pointer",
+                  }}
+                >
+                  {awayName} yellow
                 </button>
-                <button onClick={() => changeCards("away", "red", +1)}>
-                  + {awayName} red
+                <button
+                  onClick={() => openCardConfirm("away", "red")}
+                  style={{
+                    padding: "0.35rem 0.75rem",
+                    borderRadius: 999,
+                    border: "none",
+                    background: "#dc2626",
+                    color: "#ffffff",
+                    fontSize: "0.9rem",
+                    cursor: "pointer",
+                  }}
+                >
+                  {awayName} red
                 </button>
               </div>
             </div>
@@ -1480,16 +1825,61 @@ function AdminMatchConsole() {
                   marginBottom: "0.5rem",
                 }}
               >
-                <button onClick={() => changeCards("home", "yellow", -1)}>
+                {/* correction buttons keep the same colour as the card type and show a minus sign */}
+                <button
+                  onClick={() => changeCards("home", "yellow", -1)}
+                  style={{
+                    padding: "0.35rem 0.75rem",
+                    borderRadius: 999,
+                    border: "none",
+                    background: "#eab308",
+                    color: "#1f2937",
+                    fontSize: "0.9rem",
+                    cursor: "pointer",
+                  }}
+                >
                   - {homeName} yellow
                 </button>
-                <button onClick={() => changeCards("home", "red", -1)}>
+                <button
+                  onClick={() => changeCards("home", "red", -1)}
+                  style={{
+                    padding: "0.35rem 0.75rem",
+                    borderRadius: 999,
+                    border: "none",
+                    background: "#dc2626",
+                    color: "#ffffff",
+                    fontSize: "0.9rem",
+                    cursor: "pointer",
+                  }}
+                >
                   - {homeName} red
                 </button>
-                <button onClick={() => changeCards("away", "yellow", -1)}>
+                <button
+                  onClick={() => changeCards("away", "yellow", -1)}
+                  style={{
+                    padding: "0.35rem 0.75rem",
+                    borderRadius: 999,
+                    border: "none",
+                    background: "#eab308",
+                    color: "#1f2937",
+                    fontSize: "0.9rem",
+                    cursor: "pointer",
+                  }}
+                >
                   - {awayName} yellow
                 </button>
-                <button onClick={() => changeCards("away", "red", -1)}>
+                <button
+                  onClick={() => changeCards("away", "red", -1)}
+                  style={{
+                    padding: "0.35rem 0.75rem",
+                    borderRadius: 999,
+                    border: "none",
+                    background: "#dc2626",
+                    color: "#ffffff",
+                    fontSize: "0.9rem",
+                    cursor: "pointer",
+                  }}
+                >
                   - {awayName} red
                 </button>
               </div>
@@ -1673,11 +2063,13 @@ function AdminMatchConsole() {
                   )}
 
                   {/* user story #11 - this button takes the admin to the match report page */}
-                  {/* it uses the competition info from the admin's profile to build the correct url */}
+                  {/* it uses the competition info from the selected fixture (or falls back to the admin profile) to build the correct url */}
                   <button
                     onClick={() => {
-                      const competitionType = userDoc?.competitionType || "championship";
-                      const competitionId = userDoc?.competitionId || "munster-championship";
+                      const competitionType =
+                        selectedFixtureSource?.type || userDoc?.competitionType || "championship";
+                      const competitionId =
+                        selectedFixtureSource?.id || userDoc?.competitionId || "munster-championship";
                       navigate(`/report/${competitionType}/${competitionId}/${selectedFixtureId}`);
                     }}
                     style={{
@@ -1824,6 +2216,154 @@ function AdminMatchConsole() {
             >
               <button onClick={cancelScoringEvent}>Cancel</button>
               <button onClick={confirmScoringEvent}>Confirm</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* card confirmation popup - appears when logging a new card so admin can select the player */}
+      {showCardModal && pendingCard && selectedFixture && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.4)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+        >
+          <div
+            style={{
+              background: "#ffffff",
+              padding: "1rem 1.25rem",
+              borderRadius: 8,
+              maxWidth: 420,
+              width: "90%",
+              boxShadow: "0 4px 10px rgba(0,0,0,0.15)",
+            }}
+          >
+            <h4 style={{ marginTop: 0, marginBottom: "0.5rem" }}>
+              Confirm {pendingCard.cardType === "red" ? "red" : "yellow"} card
+            </h4>
+            <p style={{ margin: "0.25rem 0" }}>
+              <strong>
+                {pendingCard.team === "home" ? homeName : awayName}{" "}
+                {pendingCard.cardType === "red" ? "red card" : "yellow card"}
+              </strong>
+            </p>
+            <p style={{ margin: "0.25rem 0" }}>
+              Time:{" "}
+              <strong>
+                {formatClock(
+                  typeof pendingCard.clockSeconds === "number"
+                    ? pendingCard.clockSeconds
+                    : elapsedSeconds
+                )}
+              </strong>
+            </p>
+            <p style={{ margin: "0.25rem 0" }}>
+              Updated cards:{" "}
+              <strong>
+                {homeName} Y{pendingCard.homeYellow} / R{pendingCard.homeRed} •{" "}
+                {awayName} Y{pendingCard.awayYellow} / R{pendingCard.awayRed}
+              </strong>
+            </p>
+
+            <div style={{ marginTop: "0.75rem" }}>
+              <p style={{ marginBottom: 4 }}>Select player who received the card:</p>
+              <div
+                style={{
+                  maxHeight: 160,
+                  overflowY: "auto",
+                  border: "1px solid #ddd",
+                  borderRadius: 6,
+                  padding: "0.5rem",
+                  background: "#f9fafb",
+                }}
+              >
+                {(pendingCard.team === "home"
+                  ? selectedFixture.homeLineup || []
+                  : selectedFixture.awayLineup || []
+                ).length === 0 && (
+                  <p style={{ fontSize: 13, margin: 0 }}>
+                    No lineup entered for this team. Close and add a lineup first.
+                  </p>
+                )}
+                {(pendingCard.team === "home"
+                  ? selectedFixture.homeLineup || []
+                  : selectedFixture.awayLineup || []
+                ).map((player) => (
+                  <label
+                    key={player}
+                    style={{
+                      display: "block",
+                      fontSize: 14,
+                      cursor: "pointer",
+                      marginBottom: 2,
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="card-player"
+                      value={player}
+                      checked={pendingCardPlayer === player}
+                      onChange={(e) => {
+                        setPendingCardPlayer(e.target.value);
+                        setCardError("");
+                      }}
+                      style={{ marginRight: 6 }}
+                    />
+                    {player}
+                  </label>
+                ))}
+              </div>
+              {cardError && (
+                <p style={{ color: "red", fontSize: 13, marginTop: 4 }}>
+                  {cardError}
+                </p>
+              )}
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: "0.5rem",
+                marginTop: "0.75rem",
+              }}
+            >
+              <button
+                type="button"
+                onClick={cancelCardEvent}
+                style={{
+                  padding: "0.35rem 0.75rem",
+                  borderRadius: 999,
+                  border: "1px solid #d1d5db",
+                  background: "#ffffff",
+                  cursor: "pointer",
+                  fontSize: "0.9rem",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmCardEvent}
+                style={{
+                  padding: "0.35rem 0.75rem",
+                  borderRadius: 999,
+                  border: "none",
+                  background: "#eab308",
+                  color: "#1f2937",
+                  cursor: "pointer",
+                  fontSize: "0.9rem",
+                  fontWeight: 600,
+                }}
+              >
+                Save card
+              </button>
             </div>
           </div>
         </div>

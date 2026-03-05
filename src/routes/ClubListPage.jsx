@@ -77,7 +77,7 @@ export default function ClubListPage() {
       <h1 style={{ marginBottom: 12 }}>Clubs</h1>
 
       {/* search box and club count */}
-      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 16 }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 20, flexWrap: "wrap" }}>
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -91,7 +91,7 @@ export default function ClubListPage() {
           }}
         />
         {/* showing how many clubs match the search */}
-        <div style={{ fontSize: 14, opacity: 0.7 }}>
+        <div style={{ fontSize: 14, opacity: 0.7, minWidth: 80 }}>
           {loading ? "Loading..." : `${filtered.length} clubs`}
         </div>
       </div>
@@ -102,12 +102,12 @@ export default function ClubListPage() {
       ) : filtered.length === 0 ? (
         <p>No clubs found.</p>
       ) : (
-        // grid layout that automatically fits clubs into columns
+        // three-column grid layout on desktop (cards side by side)
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
-            gap: 12,
+            gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+            gap: 16,
           }}
         >
           {/* rendering each club as a clickable card */}
@@ -124,10 +124,12 @@ export default function ClubListPage() {
                   style={{
                     border: "1px solid #e5e5e5",
                     borderRadius: 12,
-                    padding: 14,
+                    padding: 16,
                     background: "white",
                     cursor: "pointer",
                     height: "100%",
+                    boxShadow: "0 1px 3px rgba(15, 23, 42, 0.08)",
+                    transition: "box-shadow 0.15s ease, transform 0.15s ease",
                   }}
                 >
                   <div style={{ fontWeight: 700 }}>{club.name}</div>
@@ -135,10 +137,6 @@ export default function ClubListPage() {
                   <div style={{ fontSize: 13, opacity: 0.7, marginTop: 6 }}>
                     {club.division ? `Division: ${club.division}` : null}
                     {club.county ? ` • County: ${club.county}` : null}
-                  </div>
-                  {/* showing the club ID for reference */}
-                  <div style={{ fontSize: 12, opacity: 0.6, marginTop: 8 }}>
-                    ID: {clubId}
                   </div>
                 </div>
               </Link>

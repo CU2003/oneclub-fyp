@@ -28,8 +28,8 @@ export default function About() {
         <div className="panel-body" style={{ textAlign: "center", lineHeight: 1.6 }}>
             {/* Intro sentence that explains the web app*/}
           <p style={{ marginBottom: 12 }}>
-            <strong>OneClub</strong> brings live fixtures, league standings and news
-            together for GAA Hurling and Football across Cork.
+            <strong>OneClub</strong> is a live GAA hub for Cork. It brings fixtures, league standings,
+            live match timelines, verified results and reporter news together in one simple place.
           </p>
 
           <ul
@@ -39,12 +39,13 @@ export default function About() {
               margin: "8px 0 14px",
             }}
           >
-            <li>Quick Updates</li>
-            <li>Ongoing Match Timelines</li>
-            <li>Trusted Source</li>
+            <li>Live score updates and match clocks</li>
+            <li>Ongoing match timelines and lineups</li>
+            <li>Verified results and reporter match reports</li>
+            <li>News and small sponsor messages from local clubs</li>
           </ul>
 
-          <p>Brings GAA fans young and old around the county together.</p>
+          <p>It helps GAA fans, players and clubs across Cork follow their games together in one place.</p>
         </div>
       </div>
     </div>

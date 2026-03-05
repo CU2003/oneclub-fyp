@@ -15,7 +15,7 @@
 import "./App.css";
 
 import { Routes, Route, Link, useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { collection, getDocs, query, where, limit } from "firebase/firestore";
 import { db } from "./firebase";
 
@@ -26,17 +26,16 @@ import ClubPage from "./routes/ClubPage.jsx";
 import About from "./routes/About.jsx";
 import Help from "./routes/Help.jsx";
 import Login from "./routes/Login.jsx";
+import ReporterSignup from "./routes/ReporterSignup.jsx";
 import ClubListPage from "./routes/ClubListPage.jsx";
-
-
 import AdminLogin from "./routes/AdminLogin.jsx";
 import AdminMatchConsole from "./routes/AdminMatchConsole.jsx";
-
-// user story #11 - this is the page that shows the full match report with all the details
 import MatchReporter from "./routes/MatchReporter.jsx";
-// user story 10 - supporter live timeline and match clock page
 import FixtureTimeline from "./routes/FixtureTimeline.jsx";
+import ReporterDashboard from "./routes/ReporterDashboard.jsx";
+import NewsReportPage from "./routes/NewsReportPage.jsx";
 import ProtectedRoute from "./ProtectedRoute.jsx";
+import ReporterProtectedRoute from "./ReporterProtectedRoute.jsx";
 import { AuthProvider, useAuth } from "./AuthContext.jsx";
 import { auth } from "./firebase";
 
@@ -58,12 +57,14 @@ function slugify(str) {
 function AppContent() {
   // user story 2 - storing what the user types in the search box
   const [q, setQ] = useState("");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const navigate = useNavigate();
   const { currentUser, userDoc } = useAuth(); // getting logged-in user and their profile
 
   // check if the current user is an admin based on their Firestore profile
   // this lets us show admin-only links in the settings menu (like the admin console)
   const isAdmin = userDoc?.role === "admin";
+  const isReporter = userDoc?.role === "reporter";
 
   // helper function to check if a club matches the search term
   // handles abbreviations like "UCC" matching "University College Cork"
@@ -138,6 +139,15 @@ function AppContent() {
     navigate("/");
   }
 
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const onEscape = (e) => {
+      if (e.key === "Escape") setSidebarOpen(false);
+    };
+    window.addEventListener("keydown", onEscape);
+    return () => window.removeEventListener("keydown", onEscape);
+  }, [sidebarOpen]);
+
   return (
     <>
       <header className="navbar" role="banner" aria-label="OneClub">
@@ -164,16 +174,15 @@ function AppContent() {
             {/* the text box where users type what they're looking for */}
             <input
               className="search-input"
-              placeholder="Search clubs, competitions…"
+              placeholder="Search clubs here"
               aria-label="Search"
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
           </form>
 
-          {/* settings menu and logout button */}
+          {/* sidebar toggle and logout button */}
           <nav className="nav-actions">
-            {/* showing logout button when someone is logged in */}
             {currentUser && (
               <button
                 onClick={handleLogout}
@@ -189,56 +198,94 @@ function AppContent() {
                 Logout
               </button>
             )}
-            <details className="settings-menu">
-              <summary className="icon-btn" aria-label="Settings" role="button">
-                Settings
-              </summary>
-              <ul className="menu">
-                <li>
-                  <Link to="/about">About OneClub</Link>
-                </li>
-                <li>
-                  <Link to="/help">Help & Feedback</Link>
-                </li>
-
-                <li>
-                  <Link to="/clubs">Club listing</Link>
-                </li>
-
-                {/* admin-only link so admins can always reach the console, even if no fixtures are visible */}
-                {isAdmin && (
-                  <li>
-                    <Link to="/admin">Admin console</Link>
-                  </li>
-                )}
-
-                {/* showing different menu items based on login status */}
-                {!currentUser ? (
-                  <>
-                    <li>
-                      <Link to="/login">Login / Sign up</Link>
-                    </li>
-                  </>
-                ) : (
-                  <>
-                    {/* displaying who's logged in and their role */}
-                    <li style={{ padding: "8px 12px", borderTop: "1px solid var(--panel-line)", marginTop: "4px" }}>
-                      <span style={{ fontSize: "12px", opacity: 0.7 }}>
-                        Logged in as: {currentUser.email}
-                        {userDoc?.role && (
-                          <span style={{ textTransform: "capitalize", marginLeft: "4px" }}>
-                            ({userDoc.role})
-                          </span>
-                        )}
-                      </span>
-                    </li>
-                  </>
-                )}
-              </ul>
-            </details>
+            <button
+              type="button"
+              className="icon-btn sidebar-toggle"
+              onClick={() => setSidebarOpen(true)}
+              aria-label="Open menu"
+              title="Menu"
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                <line x1="3" y1="6" x2="21" y2="6" />
+                <line x1="3" y1="12" x2="21" y2="12" />
+                <line x1="3" y1="18" x2="21" y2="18" />
+              </svg>
+            </button>
           </nav>
         </div>
       </header>
+
+      {/* sidebar overlay and panel */}
+      {sidebarOpen && (
+        <>
+          <div
+            className="sidebar-overlay"
+            onClick={() => setSidebarOpen(false)}
+            onKeyDown={(e) => e.key === "Escape" && setSidebarOpen(false)}
+            role="button"
+            tabIndex={0}
+            aria-label="Close menu"
+          />
+          <aside className="app-sidebar" role="dialog" aria-label="Menu">
+            <div className="sidebar-header">
+              <span className="sidebar-title">Menu</span>
+              <button
+                type="button"
+                className="icon-btn sidebar-close"
+                onClick={() => setSidebarOpen(false)}
+                aria-label="Close menu"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+            <ul className="sidebar-menu">
+              <li>
+                <Link to="/about" onClick={() => setSidebarOpen(false)}>About OneClub</Link>
+              </li>
+              <li>
+                <Link to="/help" onClick={() => setSidebarOpen(false)}>Help & Feedback</Link>
+              </li>
+              <li>
+                <Link to="/clubs" onClick={() => setSidebarOpen(false)}>Club listing</Link>
+              </li>
+              {isAdmin && (
+                <li>
+                  <Link to="/admin" onClick={() => setSidebarOpen(false)}>Admin console</Link>
+                </li>
+              )}
+              {isReporter && (
+                <li>
+                  <Link to="/reporter" onClick={() => setSidebarOpen(false)}>Reporter dashboard</Link>
+                </li>
+              )}
+              {!currentUser ? (
+                <>
+                  <li>
+                    <Link to="/login" onClick={() => setSidebarOpen(false)}>Login / Sign up</Link>
+                  </li>
+                  <li>
+                    <Link to="/signup/reporter" onClick={() => setSidebarOpen(false)}>Reporter sign up</Link>
+                  </li>
+                </>
+              ) : (
+                <li className="sidebar-user">
+                  <span className="sidebar-user-text">
+                    Logged in as: {currentUser.email}
+                    {userDoc?.role && (
+                      <span style={{ textTransform: "capitalize", marginLeft: "4px" }}>
+                        ({userDoc.role})
+                      </span>
+                    )}
+                  </span>
+                </li>
+              )}
+            </ul>
+          </aside>
+        </>
+      )}
 
         <main className="page">
           {/* user story 1 - defining all the different pages and their web addresses */}
@@ -246,11 +293,13 @@ function AppContent() {
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/signup/reporter" element={<ReporterSignup />} />
             <Route path="/clubs" element={<ClubListPage />} />
             <Route path="/league/:leagueId" element={<LeaguePage />} />
             <Route path="/club/:clubId" element={<ClubPage />} />
             <Route path="/about" element={<About />} />
             <Route path="/help" element={<Help />} />
+            <Route path="/news/:id" element={<NewsReportPage />} />
             <Route path="/admin-login" element={<AdminLogin />} />
             {/* user story #11 route for the match report page */}
             {/* this route takes three pieces of information from the url: competitionType, compid, fixtureid */}
@@ -274,7 +323,30 @@ function AppContent() {
                 </ProtectedRoute>
               }
             />
+            {/* reporter dashboard - only reporters can access */}
+            <Route
+              path="/reporter"
+              element={
+                <ReporterProtectedRoute>
+                  <ReporterDashboard />
+                </ReporterProtectedRoute>
+              }
+            />
           </Routes>
+
+        {/* footer shown at the bottom of every page */}
+        <footer className="footer">
+          <div className="footer-inner">
+            <span className="footer-text">
+              Got a suggestion or found an issue? Email{" "}
+              <a href="mailto:OneClub@gmail.com">OneClub@gmail.com</a>.
+            </span>
+            <span className="footer-text">
+              Need more details?{" "}
+              <Link to="/help">View full help &amp; feedback</Link>.
+            </span>
+          </div>
+        </footer>
         </main>
       </>
   );

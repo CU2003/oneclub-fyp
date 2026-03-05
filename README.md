@@ -94,6 +94,11 @@ User story 14 - admin enter lineups so reporters and supporters can see who is p
 - reference: https://chatgpt.com/share/698f5263-92fc-8004-bd06-d94790f01d1c
 - what i did: I took code from this chat and used it for my project (made changes to suit also). Used this chat to set up the lineup feature step by step. started with react state for create and edit, then parsed text to arrays when saving to firestore, loaded lineups back into textareas when selecting a fixture, added save lineups for editing, wired the scorer dropdown to the lineup arrays, and confirmed how reporters and supporters display the lineups. kept lineups as arrays so no parsing needed when displaying.
 
+## app/src/routes/GaaLineupPitch.jsx
+
+- reference (ChatGPT - gaa pitch layout): https://chatgpt.com/share/69a18c1b-0f08-8004-a65e-99e68c025dfa
+- what i did: used this chat to help design the gaa pitch lineup layout component. it guided the 1-3-3-2-3-3 formation rows, jersey number mapping (1-15), and the inline styles for the pitch background, player circles, and team name. I then adapted the code to fit my existing fixture timeline page and data shape (string arrays for lineups).
+
 ## app/src/routes/LeaguePage.jsx
 
 Lines 1-5: Firebase Firestore Documentation
@@ -194,6 +199,10 @@ Lines 70-72: Firebase Firestore - Array Operations- reference: https://firebase.
 Lines 55-57: React useMemo Hook- reference: https://react.dev/reference/react/useMemo
 - what i did: used React's useMemo hook to check if a club is in the user's favourites list. this only recalculates whether the club is favourited when the favourites list or club ID changes, which makes the page faster.
 
+Lines 184-195: w3schools - date formatting for club fixtures
+- reference: https://www.w3schools.com/jsref/jsref_tolocalestring.asp
+- what i did: used javascript's toLocaleDateString method (after calling toDate() on firestore timestamps) to format club fixture dates into short readable strings with weekday, day, month, year, hour, and minute for the fixtures and results section on the club page.
+
 ## app/src/routes/MatchReporter.jsx
 
 Lines 13-15: react router - url parameters and navigation
@@ -224,6 +233,20 @@ User story 18 - verification line in match report (Lines 296-324)
 - reference: https://stackoverflow.com/questions/60056185/convert-firestore-timestamp-to-date-into-different-format
 - what i did: took the approach from that post (toDate() then toLocaleDateString/toLocaleTimeString) and adapted it for this project to format the verification timestamp. when an admin has verified a match, the report appends a line "Result verified by: [name] on [date] at [time]" so the journalist can cite who verified the result.
 
+## app/src/routes/ReporterDashboard.jsx
+
+Lines 6-11: web speech api, react-speech-recognition, and chatgpt references
+- reference: https://developer.mozilla.org/en-US/docs/Web/API/Web_Speech_API, https://www.npmjs.com/package/react-speech-recognition, https://chatgpt.com/share/699ed52a-99ac-8004-a451-aaa361043dfd
+- what i did: used mdn web speech api docs to understand how browser speech recognition works, used the react-speech-recognition package to access speechrecognition from react, and used a chatgpt conversation as a guide/took code when wiring the voice to text feature and deciding on the notes workflow.
+
+Lines 1-7, 21-26, 67-74, 174-195, 319-366: firebase storage image upload for reporter cover images
+- reference: https://firebase.google.com/docs/storage/web/upload-files
+- what i did: followed the firebase storage web upload example that uses ref(), uploadBytes(), and getDownloadURL(), then adapted it so reporters can upload an optional cover image for each news report. the image is uploaded in firebase storage, the download url is saved as coverImageUrl on the firestore news document, and that url is used to show a thumbnail on the home page and a larger header image on the full news report page.
+
+Lines 19-21, 28-35, 174-221, 303-420: chatgpt - voice to text with notes staging flow (iteration 6)
+- reference: https://chatgpt.com/share/699ed52a-99ac-8004-a451-aaa361043dfd
+- what i did: got help from chatgpt to design and implement a reporter-friendly voice to text flow. reporters speak into the browser, see a live transcript, click add to notes to move the text into a notes box, can edit those notes, and then click insert notes into report to copy them into the main report body. also used the chat to handle microphone permissions, https checks, and clear start/stop controls so the feature works reliably in chrome/edge while falling back when speech recognition is not available.
+
 ## app/src/routes/FixtureTimeline.jsx
 
 Lines 172-179: chatgpt - building firestore paths with array spread and ordering
@@ -233,3 +256,27 @@ Lines 172-179: chatgpt - building firestore paths with array spread and ordering
 Lines 32-36, 315-430: Material UI Timeline API - timeline component implementation
 - reference: https://mui.com/material-ui/react-timeline/
 - what i did: installed @mui/material, @emotion/react, @emotion/styled, and @mui/lab packages. imported Timeline, TimelineItem, TimelineSeparator, TimelineConnector, TimelineContent, and TimelineDot components from @mui/lab. replaced the custom timeline structure with material ui timeline components. used TimelineDot color prop to show different colored dots for different event types: "success" (green) for goals, "primary" (blue) for points, "error" (red) for red cards, custom yellow (#f59e0b) via sx prop for yellow cards, and "secondary" (purple) for status changes. the timeline now uses material ui's polished components with proper spacing, connectors between events, and consistent styling.
+
+- reference (chatgpt - gaa lineup pitch layout): https://chatgpt.com/share/69a18c1b-0f08-8004-a65e-99e68c025dfa
+- what i did: used this chat to help design how the 1-3-3-2-3-3 gaa formation is shown on the pitch for each team above the timeline. adapted the advice to work with my saved lineups from firestore.
+
+## functions/index.js
+
+- reference: https://firebase.google.com/docs/functions
+- reference: https://nodemailer.com/
+- reference: https://cloud.google.com/secret-manager/docs
+- reference: https://chatgpt.com/share/69a71491-1c60-8004-9ced-fbd6221f28db
+- what i did: created a cloud function called sendReporterSignupEmail that listens to firestore on users/{uid} with onDocumentCreated. when a new user has role set to "pending-reporter", the function reads their email, pulls the smtp password from google cloud secret manager using defineSecret, and uses nodemailer with icloud smtp (smtp.mail.me.com) to send a plain text approval email to conor. this replaced the trigger email extension and was based on firebase functions docs, nodemailer docs, and the chatgpt walkthrough for reporter approval setup.
+
+## app/src/routes/ReporterSignup.jsx
+
+- reference: https://firebase.google.com/docs/auth/web/password-auth
+- reference: https://firebase.google.com/docs/firestore/manage-data/add-data
+- reference: https://chatgpt.com/share/69a71491-1c60-8004-9ced-fbd6221f28db
+- what i did: built the reporter signup page that uses createUserWithEmailAndPassword to create a firebase auth user, then writes a firestore user document with role "pending-reporter". this write to users/{uid} triggers the sendReporterSignupEmail cloud function so conor gets an approval email. i also store favourites arrays and createdAt with serverTimestamp so the profile is ready for later features.
+
+## app/src/ReporterProtectedRoute.jsx
+
+- reference: https://reactrouter.com/en/main/start/tutorial
+- reference: https://chatgpt.com/share/69a71491-1c60-8004-9ced-fbd6221f28db
+- what i did: created a protected route component for the reporter dashboard. if there is no current user it redirects to /login. if the user has role "pending-reporter" it shows a simple message that their account is waiting for approval. only users with role "reporter" can see the reporter dashboard children, and all other roles see a not authorised message. this connects to the reporter signup and approval flow so normal users cannot open the reporter tools until approved.

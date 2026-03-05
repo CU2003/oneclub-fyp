@@ -15,15 +15,14 @@ import { db } from "./firebase";
 // competitionId = e.g. "munster-championship" or "sigerson-cup" (tells us which specific competition)
 // this lets each admin only create and update games for their own competition
 const ADMIN_PROFILES = {
-  "ballygunnergaa@oneclub.com": { 
-    club: "Ballygunner_ID",
-    competitionType: "championship",
-    competitionId: "munster-championship"
-  },
   "kilbrittaingaa@oneclub.com": { 
     club: "Kilbrittain_ID",
     competitionType: "championship",
-    competitionId: "munster-championship"
+    competitionId: "munster-championship",
+    // optional: admin can also post to these competitions (e.g. West Cork Junior A league)
+    extraCompetitions: [
+      { competitionType: "league", competitionId: "west-cork-junior-a" }
+    ]
   },
   "uccgaa@oneclub.com": {
     club: "UCC_ID",
@@ -60,6 +59,7 @@ export async function ensureUserDoc(user) {
       // this tells the system where to save games when the admin creates them
       competitionType: isAdmin && adminProfile.competitionType ? adminProfile.competitionType : null,
       competitionId: isAdmin && adminProfile.competitionId ? adminProfile.competitionId : null,
+      extraCompetitions: isAdmin && Array.isArray(adminProfile.extraCompetitions) ? adminProfile.extraCompetitions : [],
 
       // starting with empty arrays for favourites and followed matches
       favouriteClubIds: [],
@@ -120,6 +120,9 @@ export async function ensureUserDoc(user) {
     }
     if (isAdmin && adminProfile.competitionId && !existingData.competitionId) {
       updates.competitionId = adminProfile.competitionId;
+    }
+    if (isAdmin && Array.isArray(adminProfile.extraCompetitions) && !Array.isArray(existingData.extraCompetitions)) {
+      updates.extraCompetitions = adminProfile.extraCompetitions;
     }
 
     if (Object.keys(updates).length > 0) {

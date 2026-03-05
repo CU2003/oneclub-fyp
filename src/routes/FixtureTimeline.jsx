@@ -37,6 +37,8 @@ import TimelineConnector from "@mui/lab/TimelineConnector";
 import TimelineContent from "@mui/lab/TimelineContent";
 import TimelineOppositeContent from "@mui/lab/TimelineOppositeContent";
 import TimelineDot from "@mui/lab/TimelineDot";
+// gaa lineup on pitch when lineup is confirmed – app/src/components/GaaLineupPitch.jsx
+import GaaLineupPitch from "./GaaLineupPitch.jsx";
 
 export default function FixtureTimeline() {
   // pulls the competition type, competition id, and fixture id from the url
@@ -185,9 +187,9 @@ export default function FixtureTimeline() {
     // took code from this chat and implemneted it using my project info
     // get a reference to the events subcollection under this fixture
     const eventsCol = collection(db, ...collectionPath, fixtureId, "events");
-    // create a query that sorts events by clockSeconds in ascending order
-    // ordering by clockSeconds so the timeline flows in match time order
-    const q = query(eventsCol, orderBy("clockSeconds", "asc"));
+    // create a query that sorts events by createdAt in ascending order
+    // ordering by createdAt so events stay in the order they happened, even if the admin resets the clock at half time
+    const q = query(eventsCol, orderBy("createdAt", "asc"));
 
     // listen for real-time updates to the events collection
     const unsub = onSnapshot(
@@ -292,8 +294,9 @@ export default function FixtureTimeline() {
         )}
       </div>
 
-      {/* user story 14 - reference: https://chatgpt.com/share/698f5263-92fc-8004-bd06-d94790f01d1c (lines 295-336). I took code from this chat and used it for my project (made changes to suit also). Lineups displayed for supporters from fixture doc (admin entered them in match console). */}
-      {/* Only show this section if the fixture has at least one team lineup. */}
+      {/* user story 14 - reference: https://chatgpt.com/share/698f5263-92fc-8004-bd06-d94790f01d1c (lines 295-336). i took code from this chat and used it for my project (made changes to suit also). lineups displayed for supporters from fixture doc (admin entered them in match console). */}
+      {/* gaa lineup pitch layout reference: https://chatgpt.com/share/69a18c1b-0f08-8004-a65e-99e68c025dfa - used this chat to help design how the 1-3-3-2-3-3 formation is shown on the pitch for each team. */}
+      {/* only show this section if the fixture has at least one team lineup (lineup confirmed). when confirmed, show gaa pitch formation first and then the simple numbered list version below it. */}
       {fixture && ((Array.isArray(fixture.homeLineup) && fixture.homeLineup.length > 0) || (Array.isArray(fixture.awayLineup) && fixture.awayLineup.length > 0)) ? (
         <div
           style={{
@@ -305,6 +308,27 @@ export default function FixtureTimeline() {
           }}
         >
           <h3 style={{ marginTop: 0, marginBottom: "0.75rem" }}>Team Lineups</h3>
+          {/* gaa pitch layout – show both teams in 1-3-3-2-3-3 formation when a lineup is confirmed */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: (Array.isArray(fixture.homeLineup) && fixture.homeLineup.length > 0 && Array.isArray(fixture.awayLineup) && fixture.awayLineup.length > 0)
+                ? "1fr 1fr"
+                : "1fr",
+              gap: "1.5rem",
+              marginBottom: "1rem",
+            }}
+          >
+            {/* home team pitch – blue colour */}
+            {Array.isArray(fixture.homeLineup) && fixture.homeLineup.length > 0 && (
+              <GaaLineupPitch players={fixture.homeLineup} teamName={homeName} accentColor="#1976d2" />
+            )}
+            {/* away team pitch – red colour */}
+            {Array.isArray(fixture.awayLineup) && fixture.awayLineup.length > 0 && (
+              <GaaLineupPitch players={fixture.awayLineup} teamName={awayName} accentColor="#d32f2f" />
+            )}
+          </div>
+          {/* simple numbered lists beside or under the pitch view for people who prefer text only */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
             {/* If the home team has a lineup, show the team name and a numbered list of players. */}
             {Array.isArray(fixture.homeLineup) && fixture.homeLineup.length > 0 && (
@@ -404,8 +428,14 @@ export default function FixtureTimeline() {
                     ? awayName
                     : ""
                   : "";
-                mainText = cardWord;
-                oppositeContent = teamLabel || ""; // show team name on opposite side
+                // if we know the player, show their name in the main text and the team on the opposite side
+                if (ev.playerName) {
+                  mainText = `${cardWord} – ${ev.playerName}`;
+                  oppositeContent = teamLabel || "";
+                } else {
+                  mainText = cardWord;
+                  oppositeContent = teamLabel || ""; // show team name on opposite side
+                }
                 detailText = `Cards: ${homeName} Y${ev.homeYellow ?? 0}/R${
                   ev.homeRed ?? 0
                 } • ${awayName} Y${ev.awayYellow ?? 0}/R${ev.awayRed ?? 0}`;
